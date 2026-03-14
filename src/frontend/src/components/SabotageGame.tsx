@@ -276,9 +276,13 @@ export default function SabotageGame() {
     const mobileBtn = mobileKillBtnRef.current;
     if (!btn || !mobileBtn) return;
 
+    const interactBtn = document.getElementById(
+      "sabotage-btn-interact",
+    ) as HTMLButtonElement | null;
     if (g.isImpostor) {
       btn.style.display = "flex";
       mobileBtn.style.display = "flex";
+      if (interactBtn) interactBtn.style.display = "none";
       if (g.killCooldown <= 0) {
         btn.className = "kill-button active ready";
         btn.textContent = "KILL";
@@ -291,6 +295,7 @@ export default function SabotageGame() {
     } else {
       btn.style.display = "none";
       mobileBtn.style.display = "none";
+      if (interactBtn) interactBtn.style.display = "flex";
     }
   }
 
@@ -1659,155 +1664,153 @@ export default function SabotageGame() {
             />
           </div>
 
-          <button
-            type="button"
-            id="sabotage-btn-sprint"
-            data-ocid="game.sprint_button"
+          {/* Action Button Cluster - Bottom Right */}
+          <div
             style={{
               position: "absolute",
-              bottom: 180,
-              right: 40,
-              width: 80,
-              height: 80,
-              borderRadius: "50%",
-              border: "3px solid #06f",
-              background: "rgba(0,100,255,0.3)",
-              color: "#06f",
-              fontSize: 14,
-              fontWeight: "bold",
-              textTransform: "uppercase",
+              bottom: 30,
+              right: 20,
+              display: "grid",
+              gridTemplateColumns: "70px 70px",
+              gridTemplateRows: "70px 70px",
+              gap: 10,
               pointerEvents: "auto",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 0 20px rgba(0,100,255,0.3)",
-              cursor: "pointer",
-              fontFamily: "'Impact', 'Arial Black', sans-serif",
             }}
           >
-            SPRINT
-          </button>
+            {/* Sprint - Blue (top-left) */}
+            <button
+              type="button"
+              id="sabotage-btn-sprint"
+              data-ocid="game.sprint_button"
+              style={{
+                width: 70,
+                height: 70,
+                borderRadius: "50%",
+                border: "none",
+                background: "radial-gradient(circle at 35% 35%, #4af, #06f)",
+                color: "#fff",
+                fontSize: 28,
+                pointerEvents: "auto",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow:
+                  "0 4px 12px rgba(0,100,255,0.6), inset 0 -3px 6px rgba(0,0,0,0.3)",
+                cursor: "pointer",
+              }}
+              title="Sprint"
+            >
+              🏃
+            </button>
 
-          <button
-            type="button"
-            id="sabotage-btn-interact"
-            data-ocid="game.interact_button"
-            style={{
-              position: "absolute",
-              bottom: 50,
-              right: 150,
-              width: 80,
-              height: 80,
-              borderRadius: "50%",
-              border: "3px solid #0f0",
-              background: "rgba(0,255,0,0.3)",
-              color: "#0f0",
-              fontSize: 14,
-              fontWeight: "bold",
-              textTransform: "uppercase",
-              pointerEvents: "auto",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 0 20px rgba(0,255,0,0.3)",
-              cursor: "pointer",
-              fontFamily: "'Impact', 'Arial Black', sans-serif",
-            }}
-          >
-            USE
-          </button>
+            {/* Meeting - Yellow (top-right) */}
+            <button
+              type="button"
+              data-ocid="game.mobile_meeting_button"
+              onClick={triggerMeeting}
+              style={{
+                width: 70,
+                height: 70,
+                borderRadius: "50%",
+                border: "none",
+                background:
+                  "radial-gradient(circle at 35% 35%, #ffe066, #e6a800)",
+                color: "#fff",
+                fontSize: 28,
+                pointerEvents: "auto",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow:
+                  "0 4px 12px rgba(230,168,0,0.6), inset 0 -3px 6px rgba(0,0,0,0.3)",
+                cursor: "pointer",
+              }}
+              title="Emergency Meeting"
+            >
+              🚨
+            </button>
 
-          {/* Mobile Report Button */}
-          <button
-            type="button"
-            data-ocid="game.mobile_report_button"
-            onClick={reportBody}
-            style={{
-              position: "absolute",
-              bottom: 50,
-              right: 250,
-              width: 80,
-              height: 80,
-              borderRadius: "50%",
-              border: "3px solid #fa0",
-              background: "rgba(255,165,0,0.2)",
-              color: "#fa0",
-              fontSize: 12,
-              fontWeight: "bold",
-              textTransform: "uppercase",
-              pointerEvents: "auto",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 0 15px rgba(255,165,0,0.3)",
-              cursor: "pointer",
-              fontFamily: "'Impact', 'Arial Black', sans-serif",
-              flexDirection: "column",
-            }}
-          >
-            <span>📢</span>REPORT
-          </button>
+            {/* Report - Orange (bottom-left) */}
+            <button
+              type="button"
+              data-ocid="game.mobile_report_button"
+              onClick={reportBody}
+              style={{
+                width: 70,
+                height: 70,
+                borderRadius: "50%",
+                border: "none",
+                background:
+                  "radial-gradient(circle at 35% 35%, #ffa040, #e65000)",
+                color: "#fff",
+                fontSize: 28,
+                pointerEvents: "auto",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow:
+                  "0 4px 12px rgba(230,80,0,0.6), inset 0 -3px 6px rgba(0,0,0,0.3)",
+                cursor: "pointer",
+              }}
+              title="Report Body"
+            >
+              📢
+            </button>
 
-          {/* Mobile Meeting Button */}
-          <button
-            type="button"
-            data-ocid="game.mobile_meeting_button"
-            onClick={triggerMeeting}
-            style={{
-              position: "absolute",
-              bottom: 180,
-              right: 150,
-              width: 80,
-              height: 80,
-              borderRadius: "50%",
-              border: "3px solid #fa0",
-              background: "rgba(255,165,0,0.2)",
-              color: "#fa0",
-              fontSize: 11,
-              fontWeight: "bold",
-              textTransform: "uppercase",
-              pointerEvents: "auto",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 0 15px rgba(255,165,0,0.3)",
-              cursor: "pointer",
-              fontFamily: "'Impact', 'Arial Black', sans-serif",
-              flexDirection: "column",
-              textAlign: "center",
-            }}
-          >
-            <span>🚨</span>MEETING
-          </button>
+            {/* Interact/Use - Green (bottom-right), Kill replaces when impostor */}
+            <button
+              type="button"
+              id="sabotage-btn-interact"
+              data-ocid="game.interact_button"
+              style={{
+                width: 70,
+                height: 70,
+                borderRadius: "50%",
+                border: "none",
+                background: "radial-gradient(circle at 35% 35%, #6f6, #090)",
+                color: "#fff",
+                fontSize: 28,
+                pointerEvents: "auto",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow:
+                  "0 4px 12px rgba(0,200,0,0.6), inset 0 -3px 6px rgba(0,0,0,0.3)",
+                cursor: "pointer",
+              }}
+              title="Use / Interact"
+            >
+              ✅
+            </button>
 
-          <button
-            type="button"
-            ref={mobileKillBtnRef}
-            data-ocid="game.mobile_kill_button"
-            style={{
-              position: "absolute",
-              bottom: 50,
-              right: 40,
-              width: 80,
-              height: 80,
-              borderRadius: "50%",
-              border: "3px solid #f00",
-              background: "rgba(255,0,0,0.3)",
-              color: "#f00",
-              fontSize: 14,
-              fontWeight: "bold",
-              textTransform: "uppercase",
-              pointerEvents: "auto",
-              display: "none",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 0 20px rgba(255,0,0,0.3)",
-              cursor: "pointer",
-              fontFamily: "'Impact', 'Arial Black', sans-serif",
-            }}
-          >
-            KILL
-          </button>
+            {/* Kill - Red (overlays interact slot for impostors) */}
+            <button
+              type="button"
+              ref={mobileKillBtnRef}
+              data-ocid="game.mobile_kill_button"
+              style={{
+                width: 70,
+                height: 70,
+                borderRadius: "50%",
+                border: "none",
+                background: "radial-gradient(circle at 35% 35%, #f66, #c00)",
+                color: "#fff",
+                fontSize: 28,
+                pointerEvents: "auto",
+                display: "none",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow:
+                  "0 4px 12px rgba(200,0,0,0.6), inset 0 -3px 6px rgba(0,0,0,0.3)",
+                cursor: "pointer",
+                gridColumn: "2",
+                gridRow: "2",
+              }}
+              title="Kill"
+            >
+              ☠️
+            </button>
+          </div>
         </div>
       </div>
 
