@@ -52,6 +52,8 @@ interface Player {
   yaw: number;
   pitch: number;
   isSprinting: boolean;
+  vx: number;
+  vz: number;
 }
 
 interface GameState {
@@ -446,6 +448,8 @@ export default function SabotageGame() {
     yaw: 0,
     pitch: 0,
     isSprinting: false,
+    vx: 0,
+    vz: 0,
   });
   const botsRef = useRef<Bot[]>([]);
   const tasksRef = useRef<Task[]>([]);
@@ -1340,33 +1344,61 @@ export default function SabotageGame() {
       const player = playerRef.current;
       const keys = keysRef.current;
       const joystick = joystickRef.current;
-      const speed = player.isSprinting
-        ? settingsRef.current.moveSpeed * 2
-        : settingsRef.current.moveSpeed;
-      let dx = 0;
-      let dz = 0;
+
+      // Joystick magnitude — boost speed when stick is pushed hard (>0.5), like Unity direction.magnitude > 0.5
+      const joyMag = Math.hypot(joystick.x, joystick.y);
+      const baseSpeed = settingsRef.current.moveSpeed;
+      const speed =
+        player.isSprinting || joyMag > 0.5 ? baseSpeed * 2 : baseSpeed;
+
+      // Compute desired velocity (target direction * speed)
+      let targetVx = 0;
+      let targetVz = 0;
 
       if (keys.w || joystick.y < -0.3) {
-        dx += Math.sin(player.yaw) * speed;
-        dz -= Math.cos(player.yaw) * speed;
+        targetVx += Math.sin(player.yaw) * speed;
+        targetVz -= Math.cos(player.yaw) * speed;
       }
       if (keys.s || joystick.y > 0.3) {
-        dx -= Math.sin(player.yaw) * speed;
-        dz += Math.cos(player.yaw) * speed;
+        targetVx -= Math.sin(player.yaw) * speed;
+        targetVz += Math.cos(player.yaw) * speed;
       }
       if (keys.a || joystick.x < -0.3) {
-        dx -= Math.cos(player.yaw) * speed;
-        dz -= Math.sin(player.yaw) * speed;
+        targetVx -= Math.cos(player.yaw) * speed;
+        targetVz -= Math.sin(player.yaw) * speed;
       }
       if (keys.d || joystick.x > 0.3) {
-        dx += Math.cos(player.yaw) * speed;
-        dz += Math.sin(player.yaw) * speed;
+        targetVx += Math.cos(player.yaw) * speed;
+        targetVz += Math.sin(player.yaw) * speed;
       }
 
-      if (!checkCollision(player.x + dx, player.z, ACTIVE_MAP.walls))
-        player.x += dx;
-      if (!checkCollision(player.x, player.z + dz, ACTIVE_MAP.walls))
-        player.z += dz;
+      // Smooth velocity using Lerp (like rb.velocity = Vector3.Lerp(rb.velocity, direction * moveSpeed, 0.1f))
+      const lerpFactor = 0.18;
+      player.vx = player.vx + (targetVx - player.vx) * lerpFactor;
+      player.vz = player.vz + (targetVz - player.vz) * lerpFactor;
+
+      // Stop drift when input is near zero
+      if (Math.abs(targetVx) < 0.0001 && Math.abs(targetVz) < 0.0001) {
+        player.vx *= 0.7;
+        player.vz *= 0.7;
+      }
+
+      // Apply movement with collision
+      if (!checkCollision(player.x + player.vx, player.z, ACTIVE_MAP.walls))
+        player.x += player.vx;
+      else player.vx = 0;
+      if (!checkCollision(player.x, player.z + player.vz, ACTIVE_MAP.walls))
+        player.z += player.vz;
+      else player.vz = 0;
+
+      // Face movement direction in 3rd person (like transform.forward = direction)
+      const moveMag = Math.hypot(player.vx, player.vz);
+      if (moveMag > 0.002 && perspectiveRef.current === 2) {
+        const targetYaw = Math.atan2(player.vx, -player.vz);
+        const yawDiff =
+          ((targetYaw - player.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+        player.yaw += yawDiff * 0.15;
+      }
 
       // Bots — improved AI
       const tasks = tasksRef.current;
