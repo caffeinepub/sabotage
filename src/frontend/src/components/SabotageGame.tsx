@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 
+// COD font injected once
+if (!document.getElementById("cod-fonts")) {
+  const link = document.createElement("link");
+  link.id = "cod-fonts";
+  link.rel = "stylesheet";
+  link.href =
+    "https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Oswald:wght@400;600;700&display=swap";
+  document.head.appendChild(link);
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 interface Wall {
   x: number;
@@ -355,6 +365,41 @@ function getLocation(x: number, z: number): string {
   return "OPEN AREA";
 }
 
+const CHARACTERS = [
+  {
+    id: 1,
+    name: "Engineer",
+    color: "#cc2200",
+    accent: "#ff5533",
+    icon: "🔧",
+    desc: "Repairs systems faster",
+  },
+  {
+    id: 2,
+    name: "Medic",
+    color: "#ccaa00",
+    accent: "#ffdd22",
+    icon: "☢",
+    desc: "Detects hazardous zones",
+  },
+  {
+    id: 3,
+    name: "Soldier",
+    color: "#778899",
+    accent: "#aabbcc",
+    icon: "💀",
+    desc: "Moves faster in combat",
+  },
+  {
+    id: 4,
+    name: "Operative",
+    color: "#336622",
+    accent: "#55aa33",
+    icon: "🎯",
+    desc: "Sees farther on minimap",
+  },
+];
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function SabotageGame() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -415,6 +460,11 @@ export default function SabotageGame() {
   });
   const keysRef = useRef<Record<string, boolean>>({});
   const joystickRef = useRef({ x: 0, y: 0, active: false });
+  const lookTouchRef = useRef<{
+    id: number;
+    lastX: number;
+    lastY: number;
+  } | null>(null);
   const isMobileRef = useRef(
     /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
       navigator.userAgent,
@@ -423,6 +473,9 @@ export default function SabotageGame() {
   const rafRef = useRef<number>(0);
   const notifTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const meetingActiveRef = useRef(false);
+  const canReportRef = useRef(false);
+  const witnessedKillRef = useRef(false);
+  const lockJustAcquiredRef = useRef(false);
 
   // Meeting/Voting React state
   const [meetingActive, setMeetingActive] = useState(false);
@@ -437,6 +490,12 @@ export default function SabotageGame() {
     "start" | "settings" | "game"
   >("start");
   const [selectedMap, setSelectedMap] = useState<string>("alcatraz");
+  const [selectedCharacter, setSelectedCharacter] = useState<number>(1);
+  const playerColorRef = useRef<string>("#cc2200");
+  const selectedCharacterRef = useRef<number>(1);
+  // Camera perspective: 0=1P, 1=2P, 2=3P
+  const [perspective, setPerspective] = useState<0 | 1 | 2>(0);
+  const perspectiveRef = useRef<0 | 1 | 2>(0);
 
   // Sync meetingActiveRef with state
   const meetingTimerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
@@ -529,8 +588,26 @@ export default function SabotageGame() {
         b.alive = false;
         // Add dead body
         deadBodiesRef.current.push({ x: b.x, z: b.z, color: b.color });
+        // Check if any bot witnessed the kill (was within 6 units)
+        for (const witness of botsRef.current) {
+          if (witness === b || !witness.alive) continue;
+          const wDist = Math.hypot(witness.x - b.x, witness.z - b.z);
+          if (wDist < 6) {
+            witnessedKillRef.current = true;
+            break;
+          }
+        }
         g.killCooldown = settingsRef.current.killCooldown;
         showNotification("ELIMINATED", "alert");
+        // Kill feed entry
+        const kfEl = document.getElementById("sabotage-killfeed");
+        if (kfEl) {
+          const entry = document.createElement("div");
+          entry.className = "kf-entry";
+          entry.innerHTML = `<span class="kf-killer">YOU</span> ☠ <span class="kf-victim">${b.name}</span>`;
+          kfEl.appendChild(entry);
+          setTimeout(() => entry.remove(), 4000);
+        }
         const hm = hitMarkerRef.current;
         if (hm) {
           hm.classList.add("active");
@@ -548,13 +625,31 @@ export default function SabotageGame() {
     }
   }
 
-  function checkBodyNearby(): boolean {
+  // Report table is at the center of the map (0, 0)
+  const REPORT_TABLE = { x: 0, z: 0 };
+  const REPORT_TABLE_RADIUS = 3.5;
+
+  function checkCanReport(): boolean {
     const player = playerRef.current;
+    // Check if near a dead body
     for (const body of deadBodiesRef.current) {
       const dist = Math.hypot(body.x - player.x, body.z - player.z);
       if (dist < 3) return true;
     }
+    // Check if witnessed a kill
+    if (witnessedKillRef.current) return true;
+    // Check if near the report table (center of map)
+    const distTable = Math.hypot(
+      REPORT_TABLE.x - player.x,
+      REPORT_TABLE.z - player.z,
+    );
+    if (distTable < REPORT_TABLE_RADIUS && deadBodiesRef.current.length > 0)
+      return true;
     return false;
+  }
+
+  function checkBodyNearby(): boolean {
+    return checkCanReport();
   }
 
   function triggerMeeting() {
@@ -639,10 +734,7 @@ export default function SabotageGame() {
       closeMeeting();
       if (ejected === "PLAYER") {
         g.gameOver = true;
-        showNotification(
-          g.isImpostor ? "EXPOSED! GAME OVER" : "YOU WERE VOTED OUT!",
-          "alert",
-        );
+        showNotification("MISSION FAILED", "alert");
       } else if (ejected !== "SKIP") {
         // Remove ejected bot
         const bot = bots.find((b) => b.name === ejected);
@@ -723,7 +815,11 @@ export default function SabotageGame() {
     // Returns hit info: distance, fractional hit position along wall (0-1),
     // whether the hit wall is a "door" (thin divider wall ≤2 units on one axis),
     // and the world hit coords for floor/ceiling projection.
-    function castRayFull(angle: number): {
+    function castRayFull(
+      angle: number,
+      originX?: number,
+      originZ?: number,
+    ): {
       dist: number;
       wallX: number;
       isDoor: boolean;
@@ -735,8 +831,8 @@ export default function SabotageGame() {
       const maxDist = 30;
       const sinA = Math.sin(angle);
       const cosA = Math.cos(angle);
-      const px = playerRef.current.x;
-      const pz = playerRef.current.z;
+      const px = originX !== undefined ? originX : playerRef.current.x;
+      const pz = originZ !== undefined ? originZ : playerRef.current.z;
 
       while (dist < maxDist) {
         const hx = px + sinA * dist;
@@ -887,30 +983,41 @@ export default function SabotageGame() {
 
       if (!gameRef.current.isPlaying) return;
 
+      // ── Perspective camera offset ─────────────────────────────────────────
+      const pMode = perspectiveRef.current; // 0=1P, 1=2P, 2=3P
+      const camOffset = pMode === 1 ? 1.5 : pMode === 2 ? 3.0 : 0;
+      const camX = player.x - Math.sin(player.yaw) * camOffset;
+      const camZ = player.z + Math.cos(player.yaw) * camOffset;
+      // Pitch adjusted upward for pulled-back modes to look slightly down
+      const camPitch =
+        player.pitch + (pMode === 1 ? 0.15 : pMode === 2 ? 0.28 : 0);
+
       const numRays = Math.min(w / 2, 400);
       const fov = (60 * Math.PI) / 180;
       const stripW = w / numRays + 1;
 
+      // Horizon shift based on pitch
+      const horizonShift = camPitch * h * 0.6;
+
       // ── Pre-draw solid ceiling and floor bands ────────────────────────────
-      // Ceiling: solid dark concrete #3a3a3a
-      ctx.fillStyle = "#3a3a3a";
+      // Ceiling: pitch black (COD style)
+      ctx.fillStyle = "#080808";
       ctx.fillRect(0, 0, w, h / 2);
 
-      // Floor: rendered per-strip below for perspective correction; pre-fill
-      // with a base dark tone first so gaps are covered
-      ctx.fillStyle = "#2a2e1e";
+      // Floor: dark concrete grey
+      ctx.fillStyle = "#1a1c18";
       ctx.fillRect(0, h / 2, w, h / 2);
 
       for (let i = 0; i < numRays; i++) {
         const rayAngle = player.yaw - fov / 2 + (i / numRays) * fov;
-        const hit = castRayFull(rayAngle);
+        const hit = castRayFull(rayAngle, camX, camZ);
         const { dist, wallX, isDoor } = hit;
 
         const wallHeight = (h / dist) * 0.6;
         const screenX = (i / numRays) * w;
-        const wallTop = (h - wallHeight) / 2;
+        const wallTop = (h - wallHeight) / 2 - horizonShift;
         const wallBottom = wallTop + wallHeight;
-        const brightness = Math.max(0.12, 1 - dist / 22);
+        const brightness = Math.max(0.08, 1 - dist / 18) * 0.75; // COD darker walls
 
         // ── Ceiling strip ────────────────────────────────────────────────────
         // Already filled above; add subtle distance tint
@@ -928,8 +1035,8 @@ export default function SabotageGame() {
           const floorDist = (h * 0.3) / rowFrac / 2;
           const floorBrightness = Math.max(0.08, 1 - floorDist / 18);
 
-          const fx = player.x + Math.sin(rayAngle) * floorDist;
-          const fz = player.z - Math.cos(rayAngle) * floorDist;
+          const fx = camX + Math.sin(rayAngle) * floorDist;
+          const fz = camZ - Math.cos(rayAngle) * floorDist;
 
           ctx.fillStyle = floorTexColor(fx, fz, floorBrightness);
           ctx.fillRect(screenX, py, stripW, floorStripStep);
@@ -977,17 +1084,22 @@ export default function SabotageGame() {
       const h = canvas!.height;
       const player = playerRef.current;
       const fovTan = Math.tan((30 * Math.PI) / 180);
+      const pMode = perspectiveRef.current;
+      const camOffset = pMode === 1 ? 1.5 : pMode === 2 ? 3.0 : 0;
+      const camX = player.x - Math.sin(player.yaw) * camOffset;
+      const camZ = player.z + Math.cos(player.yaw) * camOffset;
 
       for (const task of tasksRef.current) {
         if (task.completed) continue;
-        const dx = task.x - player.x;
-        const dz = task.z - player.z;
+        const dx = task.x - camX;
+        const dz = task.z - camZ;
         const dist = Math.sqrt(dx * dx + dz * dz);
         if (dist >= 15) continue;
         const angle = Math.atan2(dx, -dz) - player.yaw;
         const screenX = w / 2 + (Math.tan(angle) * (w / 2)) / fovTan;
         const size = Math.max(5, 100 / dist);
         if (screenX < -100 || screenX > w + 100) continue;
+        if (dist <= 0.1) continue;
 
         const glow = ctx.createRadialGradient(
           screenX,
@@ -1010,10 +1122,15 @@ export default function SabotageGame() {
         ctx.fill();
       }
 
+      // Draw player character sprite in 2P/3P mode
+      if (pMode > 0) {
+        drawPlayerSprite(w, h, pMode);
+      }
+
       for (const bot of botsRef.current) {
         if (!bot.alive) continue;
-        const dx = bot.x - player.x;
-        const dz = bot.z - player.z;
+        const dx = bot.x - camX;
+        const dz = bot.z - camZ;
         const dist = Math.sqrt(dx * dx + dz * dz);
         if (dist >= 20 || dist <= 0.5) continue;
         const angle = Math.atan2(dx, -dz) - player.yaw;
@@ -1035,6 +1152,51 @@ export default function SabotageGame() {
       }
     }
 
+    function drawPlayerSprite(w: number, h: number, pMode: number) {
+      // Draw hazmat character at bottom-center of screen
+      const char =
+        CHARACTERS.find((c) => c.id === selectedCharacterRef.current) ||
+        CHARACTERS[0];
+      const baseSize = pMode === 2 ? 120 : 80; // larger in 3P
+      const cx = w / 2;
+      const cy = h - baseSize * 0.6;
+      const s = baseSize;
+
+      ctx.save();
+      // Body (torso)
+      ctx.fillStyle = char.color;
+      ctx.beginPath();
+      ctx.roundRect(cx - s * 0.22, cy - s * 0.38, s * 0.44, s * 0.44, s * 0.08);
+      ctx.fill();
+      // Backpack
+      ctx.fillStyle = char.accent;
+      ctx.fillRect(cx - s * 0.1, cy - s * 0.35, s * 0.2, s * 0.25);
+      // Head/helmet
+      ctx.fillStyle = char.color;
+      ctx.beginPath();
+      ctx.arc(cx, cy - s * 0.5, s * 0.18, 0, Math.PI * 2);
+      ctx.fill();
+      // Visor
+      ctx.fillStyle = "rgba(0,200,255,0.5)";
+      ctx.beginPath();
+      ctx.ellipse(cx, cy - s * 0.5, s * 0.1, s * 0.07, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Legs
+      ctx.fillStyle = char.color;
+      ctx.fillRect(cx - s * 0.18, cy + s * 0.06, s * 0.14, s * 0.28);
+      ctx.fillRect(cx + s * 0.04, cy + s * 0.06, s * 0.14, s * 0.28);
+      // Arms
+      ctx.fillRect(cx - s * 0.36, cy - s * 0.35, s * 0.14, s * 0.3);
+      ctx.fillRect(cx + s * 0.22, cy - s * 0.35, s * 0.14, s * 0.3);
+      // Outline
+      ctx.strokeStyle = char.accent;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(cx - s * 0.22, cy - s * 0.38, s * 0.44, s * 0.44, s * 0.08);
+      ctx.stroke();
+      ctx.restore();
+    }
+
     function drawMinimap() {
       const mw = minimap!.width;
       const mh = minimap!.height;
@@ -1044,10 +1206,17 @@ export default function SabotageGame() {
       const cx = mw / 2;
       const cz = mh / 2;
 
-      minimapCtx.fillStyle = "rgba(0,20,0,0.9)";
+      // Circular clip for minimap
+      minimapCtx.clearRect(0, 0, mw, mh);
+      minimapCtx.save();
+      minimapCtx.beginPath();
+      minimapCtx.arc(mw / 2, mh / 2, mw / 2, 0, Math.PI * 2);
+      minimapCtx.clip();
+
+      minimapCtx.fillStyle = "rgba(6,10,5,0.94)";
       minimapCtx.fillRect(0, 0, mw, mh);
 
-      minimapCtx.fillStyle = "rgba(0,255,0,0.3)";
+      minimapCtx.fillStyle = "rgba(60,80,45,0.4)";
       for (const w of ACTIVE_MAP.walls) {
         minimapCtx.fillRect(
           cx + w.x * scale,
@@ -1059,8 +1228,8 @@ export default function SabotageGame() {
 
       // Room labels
       const roomLabels = ACTIVE_MAP.roomLabels;
-      minimapCtx.fillStyle = "rgba(0,200,0,0.7)";
-      minimapCtx.font = `${isMobile ? 5 : 6}px Arial`;
+      minimapCtx.fillStyle = "rgba(140,170,100,0.7)";
+      minimapCtx.font = `bold ${isMobile ? 5 : 6}px Rajdhani, Arial`;
       minimapCtx.textAlign = "center";
       for (const room of roomLabels) {
         minimapCtx.fillText(
@@ -1072,11 +1241,28 @@ export default function SabotageGame() {
 
       // Tasks
       for (const t of tasksRef.current) {
-        minimapCtx.fillStyle = t.completed ? "#0a0" : "#0f0";
+        minimapCtx.fillStyle = t.completed ? "#4a7a4a" : "#7aaa5a";
         minimapCtx.beginPath();
         minimapCtx.arc(cx + t.x * scale, cz + t.z * scale, 3, 0, Math.PI * 2);
         minimapCtx.fill();
       }
+
+      // Report table (center of map) - shown as a white diamond
+      const rtx = cx + REPORT_TABLE.x * scale;
+      const rtz = cz + REPORT_TABLE.z * scale;
+      minimapCtx.save();
+      minimapCtx.strokeStyle = "#fff";
+      minimapCtx.fillStyle = "rgba(255,255,200,0.3)";
+      minimapCtx.lineWidth = 1.5;
+      minimapCtx.beginPath();
+      minimapCtx.moveTo(rtx, rtz - 6);
+      minimapCtx.lineTo(rtx + 6, rtz);
+      minimapCtx.lineTo(rtx, rtz + 6);
+      minimapCtx.lineTo(rtx - 6, rtz);
+      minimapCtx.closePath();
+      minimapCtx.fill();
+      minimapCtx.stroke();
+      minimapCtx.restore();
 
       // Dead bodies as red X
       for (const body of deadBodiesRef.current) {
@@ -1094,17 +1280,18 @@ export default function SabotageGame() {
         minimapCtx.stroke();
       }
 
-      // Bots
+      // Bots - shown as red enemy dots on minimap
       for (const b of botsRef.current) {
         if (!b.alive) continue;
-        minimapCtx.fillStyle = b.color;
+        minimapCtx.fillStyle = gameRef.current.isImpostor ? "#cc3030" : b.color;
         minimapCtx.beginPath();
         minimapCtx.arc(cx + b.x * scale, cz + b.z * scale, 4, 0, Math.PI * 2);
         minimapCtx.fill();
       }
 
       // Player
-      minimapCtx.fillStyle = g.isImpostor ? "#f00" : "#0f0";
+      const pColor = g.isImpostor ? "#f00" : playerColorRef.current;
+      minimapCtx.fillStyle = pColor;
       minimapCtx.beginPath();
       minimapCtx.arc(
         cx + player.x * scale,
@@ -1115,7 +1302,7 @@ export default function SabotageGame() {
       );
       minimapCtx.fill();
 
-      minimapCtx.strokeStyle = g.isImpostor ? "#f00" : "#0f0";
+      minimapCtx.strokeStyle = pColor;
       minimapCtx.lineWidth = 2;
       minimapCtx.beginPath();
       minimapCtx.moveTo(cx + player.x * scale, cz + player.z * scale);
@@ -1124,6 +1311,25 @@ export default function SabotageGame() {
         cz + player.z * scale - Math.cos(player.yaw) * 12,
       );
       minimapCtx.stroke();
+
+      // Restore clip
+      minimapCtx.restore();
+
+      // Minimap border ring
+      minimapCtx.strokeStyle = "rgba(80,100,60,0.5)";
+      minimapCtx.lineWidth = 2;
+      minimapCtx.beginPath();
+      minimapCtx.arc(mw / 2, mh / 2, mw / 2 - 1, 0, Math.PI * 2);
+      minimapCtx.stroke();
+
+      // Compass cardinal directions
+      minimapCtx.fillStyle = "rgba(140,170,100,0.8)";
+      minimapCtx.font = `bold ${isMobile ? 6 : 7}px Rajdhani, Arial`;
+      minimapCtx.textAlign = "center";
+      minimapCtx.fillText("N", mw / 2, 10);
+      minimapCtx.fillText("S", mw / 2, mh - 3);
+      minimapCtx.fillText("W", 8, mh / 2 + 3);
+      minimapCtx.fillText("E", mw - 7, mh / 2 + 3);
     }
 
     // ── Physics ───────────────────────────────────────────────────────────────
@@ -1247,12 +1453,19 @@ export default function SabotageGame() {
       }
 
       // Update report button visibility
-      const nearby = checkBodyNearby();
+      const canReport = checkCanReport();
+      canReportRef.current = canReport;
       if (reportBtnRef.current) {
-        reportBtnRef.current.style.opacity = nearby ? "1" : "0.3";
-        reportBtnRef.current.style.transform = nearby
-          ? "scale(1.05)"
-          : "scale(1)";
+        reportBtnRef.current.style.display = canReport ? "flex" : "none";
+      }
+      // Also update mobile report button
+      const mobileReportBtn = document.querySelector(
+        '[data-ocid="game.mobile_report_button"]',
+      ) as HTMLElement | null;
+      if (mobileReportBtn) {
+        mobileReportBtn.style.visibility = canReport ? "visible" : "hidden";
+        mobileReportBtn.style.opacity = canReport ? "1" : "0";
+        mobileReportBtn.style.pointerEvents = canReport ? "auto" : "none";
       }
 
       const loc = getLocation(player.x, player.z);
@@ -1308,6 +1521,14 @@ export default function SabotageGame() {
       checkInteractions();
       render();
       drawMinimap();
+      // Update compass bearing
+      const compassEl = document.getElementById("sabotage-compass");
+      if (compassEl) {
+        const bearing = Math.round(
+          ((((playerRef.current.yaw * 180) / Math.PI) % 360) + 360) % 360,
+        );
+        compassEl.textContent = `${bearing < 45 || bearing > 315 ? "N" : bearing < 135 ? "E" : bearing < 225 ? "S" : "W"} ── ${bearing}° ──`;
+      }
       rafRef.current = requestAnimationFrame(gameLoop);
     }
 
@@ -1329,6 +1550,8 @@ export default function SabotageGame() {
         pauseFrames: 0,
       }));
       deadBodiesRef.current = [];
+      witnessedKillRef.current = false;
+      canReportRef.current = false;
 
       const g = gameRef.current;
       g.isPlaying = true;
@@ -1348,13 +1571,13 @@ export default function SabotageGame() {
       const banner = roleBannerRef.current;
       if (banner) {
         if (g.isImpostor) {
-          banner.textContent = "IMPOSTOR";
+          banner.textContent = "HOSTILE";
           banner.classList.add("role-impostor");
           if (statusTextRef.current)
             statusTextRef.current.textContent = "ELIMINATE ALL";
           showNotification("YOU ARE THE IMPOSTOR", "alert");
         } else {
-          banner.textContent = "CREWMATE";
+          banner.textContent = "OPERATIVE";
           showNotification("COMPLETE TASKS TO WIN");
         }
       }
@@ -1380,6 +1603,13 @@ export default function SabotageGame() {
       if (e.key.toLowerCase() === "q") kill();
       if (e.key.toLowerCase() === "r") reportBody();
       if (e.key.toLowerCase() === "m") triggerMeeting();
+      if (e.key.toLowerCase() === "v") {
+        perspectiveRef.current = ((perspectiveRef.current + 1) % 3) as
+          | 0
+          | 1
+          | 2;
+        setPerspective(perspectiveRef.current);
+      }
     }
     function onKeyUp(e: KeyboardEvent) {
       keysRef.current[e.key.toLowerCase()] = false;
@@ -1390,7 +1620,11 @@ export default function SabotageGame() {
 
     // ── Mouse ────────────────────────────────────────────────────────────────
     function onMouseMove(e: MouseEvent) {
-      if (document.pointerLockElement === canvas && !isMobile) {
+      if (
+        document.pointerLockElement === canvas &&
+        !isMobile &&
+        !lockJustAcquiredRef.current
+      ) {
         playerRef.current.yaw += e.movementX * 0.002;
         playerRef.current.pitch -= e.movementY * 0.002;
         playerRef.current.pitch = Math.max(
@@ -1409,8 +1643,17 @@ export default function SabotageGame() {
         canvas!.requestPointerLock();
       }
     }
+    function onPointerLockChange() {
+      if (document.pointerLockElement === canvas) {
+        lockJustAcquiredRef.current = true;
+        setTimeout(() => {
+          lockJustAcquiredRef.current = false;
+        }, 200);
+      }
+    }
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("click", onClick);
+    document.addEventListener("pointerlockchange", onPointerLockChange);
 
     // ── Desktop kill button ───────────────────────────────────────────────────
     const killBtn = killBtnRef.current;
@@ -1427,8 +1670,8 @@ export default function SabotageGame() {
 
       function updateJoystick(touch: Touch) {
         const rect = zone!.getBoundingClientRect();
-        const centerX = rect.left + 60;
-        const centerY = rect.top + 60;
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
         let dx = touch.clientX - centerX;
         let dy = touch.clientY - centerY;
         const d = Math.hypot(dx, dy);
@@ -1463,6 +1706,58 @@ export default function SabotageGame() {
         if (knob) knob.style.transform = "translate(0,0)";
         jTouch = null;
       });
+
+      // Right-side swipe to look
+      const canvas = canvasRef.current;
+      canvas?.addEventListener(
+        "touchstart",
+        (e) => {
+          for (const t of Array.from(e.changedTouches)) {
+            if (t.clientX > window.innerWidth * 0.4 && !lookTouchRef.current) {
+              lookTouchRef.current = {
+                id: t.identifier,
+                lastX: t.clientX,
+                lastY: t.clientY,
+              };
+            }
+          }
+        },
+        { passive: true },
+      );
+      canvas?.addEventListener(
+        "touchmove",
+        (e) => {
+          if (!lookTouchRef.current) return;
+          for (const t of Array.from(e.touches)) {
+            if (t.identifier === lookTouchRef.current.id) {
+              const dx = t.clientX - lookTouchRef.current.lastX;
+              const dy = t.clientY - lookTouchRef.current.lastY;
+              playerRef.current.yaw += dx * 0.005;
+              playerRef.current.pitch = Math.max(
+                -0.5,
+                Math.min(0.5, playerRef.current.pitch + dy * 0.003),
+              );
+              lookTouchRef.current.lastX = t.clientX;
+              lookTouchRef.current.lastY = t.clientY;
+              break;
+            }
+          }
+        },
+        { passive: true },
+      );
+      canvas?.addEventListener(
+        "touchend",
+        (e) => {
+          if (!lookTouchRef.current) return;
+          for (const t of Array.from(e.changedTouches)) {
+            if (t.identifier === lookTouchRef.current.id) {
+              lookTouchRef.current = null;
+              break;
+            }
+          }
+        },
+        { passive: true },
+      );
 
       const sprintBtn = document.getElementById("sabotage-btn-sprint");
       sprintBtn?.addEventListener("touchstart", (e) => {
@@ -1507,6 +1802,7 @@ export default function SabotageGame() {
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("keyup", onKeyUp);
       document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("pointerlockchange", onPointerLockChange);
       document.removeEventListener("click", onClick);
       if (meetingTimerIntervalRef.current)
         clearInterval(meetingTimerIntervalRef.current);
@@ -1547,6 +1843,11 @@ export default function SabotageGame() {
     // Reset player to map spawn
     playerRef.current.x = ACTIVE_MAP.playerSpawn.x;
     playerRef.current.z = ACTIVE_MAP.playerSpawn.z;
+    // Set player color from selected character
+    const char =
+      CHARACTERS.find((c) => c.id === selectedCharacter) || CHARACTERS[0];
+    playerColorRef.current = char.color;
+    selectedCharacterRef.current = selectedCharacter;
     setCurrentScreen("game");
     if (startScreenRef.current) startScreenRef.current.style.display = "none";
     if (settingsScreenRef.current)
@@ -1591,55 +1892,145 @@ export default function SabotageGame() {
           zIndex: 10,
         }}
       >
-        {/* Crosshair */}
+        {/* Crosshair - COD 4-line style */}
         <div
+          id="sabotage-crosshair"
           style={{
             position: "absolute",
             top: "50%",
             left: "50%",
             transform: "translate(-50%,-50%)",
-            width: 40,
-            height: 40,
+            width: 60,
+            height: 60,
             pointerEvents: "none",
           }}
         >
+          {/* Top */}
           <div
             style={{
               position: "absolute",
               width: 2,
-              height: 20,
-              background: "rgba(0,255,100,0.9)",
-              boxShadow: "0 0 10px rgba(0,255,100,0.8)",
+              height: 10,
+              background: "rgba(255,255,255,0.9)",
               left: "50%",
               top: "50%",
-              transform: "translate(-50%,-50%)",
+              transform: "translate(-50%, calc(-100% - 6px))",
             }}
           />
+          {/* Bottom */}
           <div
             style={{
               position: "absolute",
-              width: 20,
+              width: 2,
+              height: 10,
+              background: "rgba(255,255,255,0.9)",
+              left: "50%",
+              top: "50%",
+              transform: "translate(-50%, 6px)",
+            }}
+          />
+          {/* Left */}
+          <div
+            style={{
+              position: "absolute",
+              width: 10,
               height: 2,
-              background: "rgba(0,255,100,0.9)",
-              boxShadow: "0 0 10px rgba(0,255,100,0.8)",
+              background: "rgba(255,255,255,0.9)",
               left: "50%",
               top: "50%",
-              transform: "translate(-50%,-50%)",
+              transform: "translate(calc(-100% - 6px), -50%)",
             }}
           />
+          {/* Right */}
           <div
             style={{
               position: "absolute",
-              width: 4,
-              height: 4,
-              background: "rgba(0,255,100,1)",
-              borderRadius: "50%",
-              top: "50%",
+              width: 10,
+              height: 2,
+              background: "rgba(255,255,255,0.9)",
               left: "50%",
-              transform: "translate(-50%,-50%)",
-              boxShadow: "0 0 8px rgba(0,255,100,1)",
+              top: "50%",
+              transform: "translate(6px, -50%)",
             }}
           />
+          {/* Center dot */}
+          <div
+            style={{
+              position: "absolute",
+              width: 2,
+              height: 2,
+              background: "rgba(255,255,255,0.7)",
+              borderRadius: "50%",
+              left: "50%",
+              top: "50%",
+              transform: "translate(-50%,-50%)",
+            }}
+          />
+        </div>
+
+        {/* Vignette & scanlines */}
+        <div id="sabotage-game-vignette" />
+        <div id="sabotage-game-scanlines" />
+
+        {/* Compass */}
+        <div id="sabotage-compass">N ───── 360° ─────</div>
+
+        {/* Kill Feed */}
+        <div id="sabotage-killfeed" />
+
+        {/* Perspective Toggle */}
+        <button
+          type="button"
+          data-ocid="game.perspective_toggle"
+          onClick={() => {
+            const next = ((perspectiveRef.current + 1) % 3) as 0 | 1 | 2;
+            perspectiveRef.current = next;
+            setPerspective(next);
+          }}
+          style={{
+            position: "absolute",
+            top: 35,
+            left: 20,
+            padding: "6px 14px",
+            background: "rgba(8,12,6,0.88)",
+            border: "1px solid rgba(80,100,60,0.5)",
+            borderLeft: "3px solid #c8a84b",
+            color: "#c8a84b",
+            fontSize: 14,
+            fontWeight: 700,
+            fontFamily: "'Oswald', 'Rajdhani', sans-serif",
+            letterSpacing: 3,
+            textTransform: "uppercase",
+            cursor: "pointer",
+            pointerEvents: "auto",
+            zIndex: 15,
+          }}
+          title="Cycle camera perspective (V)"
+        >
+          {perspective === 0 ? "1P" : perspective === 1 ? "2P" : "3P"}
+        </button>
+
+        {/* Health Bar */}
+        <div id="sabotage-health">
+          <div id="sabotage-health-label">HP</div>
+          <div id="sabotage-health-bar">
+            {Array.from({ length: 10 }).map((_, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: health segments are positional
+              <div key={i} className="seg" />
+            ))}
+          </div>
+        </div>
+
+        {/* Ammo Counter */}
+        <div id="sabotage-ammo">
+          <div id="sabotage-ammo-main">30</div>
+          <div id="sabotage-ammo-reserve">/ 90</div>
+        </div>
+
+        {/* Death Overlay */}
+        <div id="sabotage-death-overlay">
+          <h2>YOU WERE ELIMINATED</h2>
+          <p>PRESS ENTER TO CONTINUE</p>
         </div>
 
         {/* Role Banner */}
@@ -1651,16 +2042,18 @@ export default function SabotageGame() {
             top: 20,
             left: "50%",
             transform: "translateX(-50%)",
-            padding: "8px 40px",
-            fontSize: 24,
-            fontWeight: "bold",
-            letterSpacing: 4,
+            padding: "6px 40px",
+            fontSize: 18,
+            fontWeight: 700,
+            letterSpacing: 6,
             textTransform: "uppercase",
-            color: "#0f0",
+            color: "#4aff4a",
             background:
-              "linear-gradient(90deg, transparent, rgba(0,50,0,0.8), transparent)",
-            border: "2px solid #0f0",
-            textShadow: "0 0 20px #0f0",
+              "linear-gradient(90deg, transparent, rgba(10,25,10,0.9), transparent)",
+            border: "none",
+            borderBottom: "2px solid #3a7a3a",
+            textShadow: "0 0 12px rgba(74,255,74,0.5)",
+            fontFamily: "'Oswald', sans-serif",
           }}
         >
           CREWMATE
@@ -1678,13 +2071,13 @@ export default function SabotageGame() {
         >
           <div
             style={{
-              color: "#0f0",
-              fontSize: 12,
+              color: "#8aaa6a",
+              fontSize: 10,
               textTransform: "uppercase",
-              letterSpacing: 2,
-              marginBottom: 5,
+              letterSpacing: 3,
+              marginBottom: 4,
               textAlign: "center",
-              textShadow: "0 0 10px #0f0",
+              fontFamily: "'Rajdhani', sans-serif",
             }}
           >
             TASK PROGRESS
@@ -1692,9 +2085,9 @@ export default function SabotageGame() {
           <div
             style={{
               width: "100%",
-              height: 8,
-              background: "rgba(0,50,0,0.5)",
-              border: "1px solid #0f0",
+              height: 6,
+              background: "rgba(20,30,15,0.8)",
+              border: "1px solid rgba(80,120,60,0.4)",
               position: "relative",
               overflow: "hidden",
             }}
@@ -1782,10 +2175,10 @@ export default function SabotageGame() {
             width: 180,
             height: 180,
             borderRadius: "50%",
-            background: "rgba(0,20,0,0.9)",
-            border: "2px solid #0f0",
+            background: "rgba(6,10,5,0.92)",
+            border: "2px solid rgba(80,100,60,0.6)",
             overflow: "hidden",
-            boxShadow: "0 0 30px rgba(0,255,0,0.3)",
+            boxShadow: "0 2px 12px rgba(0,0,0,0.8)",
           }}
         >
           <canvas ref={minimapRef} style={{ width: "100%", height: "100%" }} />
@@ -1797,7 +2190,7 @@ export default function SabotageGame() {
               width: "100%",
               height: "100%",
               borderRadius: "50%",
-              boxShadow: "inset 0 0 40px rgba(0,255,0,0.2)",
+              boxShadow: "inset 0 0 30px rgba(0,0,0,0.6)",
               pointerEvents: "none",
             }}
           />
@@ -1815,17 +2208,18 @@ export default function SabotageGame() {
             width: 100,
             height: 100,
             borderRadius: "50%",
-            background:
-              "radial-gradient(circle, rgba(255,0,0,0.3), rgba(100,0,0,0.8))",
-            border: "3px solid #f00",
-            color: "#f00",
-            fontSize: 18,
-            fontWeight: "bold",
+            background: "rgba(20,5,5,0.92)",
+            border: "2px solid #8a2020",
+            color: "#cc4040",
+            fontSize: 15,
+            fontWeight: 700,
             textTransform: "uppercase",
             display: "none",
             alignItems: "center",
             justifyContent: "center",
-            boxShadow: "0 0 30px rgba(255,0,0,0.5)",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
+            fontFamily: "'Oswald', sans-serif",
+            letterSpacing: 2,
             pointerEvents: "auto",
             cursor: "pointer",
           }}
@@ -1846,20 +2240,19 @@ export default function SabotageGame() {
             width: 90,
             height: 90,
             borderRadius: "50%",
-            background:
-              "radial-gradient(circle, rgba(255,165,0,0.3), rgba(100,60,0,0.8))",
-            border: "3px solid #fa0",
-            color: "#fa0",
-            fontSize: 13,
-            fontWeight: "bold",
+            background: "rgba(15,10,5,0.92)",
+            border: "2px solid #6a5020",
+            color: "#c8a84b",
+            fontSize: 11,
+            fontWeight: 700,
             textTransform: "uppercase",
-            display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            boxShadow: "0 0 20px rgba(255,165,0,0.4)",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
+            fontFamily: "'Rajdhani', sans-serif",
             pointerEvents: "auto",
             cursor: "pointer",
-            opacity: 0.3,
+            display: "none",
             transition: "opacity 0.3s, transform 0.3s",
             textAlign: "center",
             lineHeight: 1.2,
@@ -1881,20 +2274,22 @@ export default function SabotageGame() {
             left: "50%",
             transform: "translateX(-50%)",
             padding: "12px 30px",
-            background: "rgba(20,10,0,0.9)",
-            border: "2px solid #fa0",
-            color: "#fa0",
-            fontSize: 16,
-            fontWeight: "bold",
+            background: "rgba(8,8,5,0.92)",
+            border: "1px solid #5a4a20",
+            borderTop: "2px solid #c8a84b",
+            color: "#c8a84b",
+            fontSize: 13,
+            fontWeight: 700,
             textTransform: "uppercase",
-            letterSpacing: 3,
+            letterSpacing: 4,
             cursor: "pointer",
             pointerEvents: "auto",
-            boxShadow: "0 0 20px rgba(255,165,0,0.4)",
+            boxShadow: "0 -4px 20px rgba(0,0,0,0.4)",
             display: "flex",
             alignItems: "center",
             gap: 8,
             zIndex: 20,
+            fontFamily: "'Oswald', sans-serif",
           }}
         >
           <span>🚨</span> EMERGENCY MEETING
@@ -1909,17 +2304,19 @@ export default function SabotageGame() {
             left: "50%",
             transform: "translateX(-50%)",
             padding: "15px 30px",
-            background: "rgba(0,50,0,0.9)",
-            border: "2px solid #0f0",
-            color: "#0f0",
-            fontSize: 18,
-            fontWeight: "bold",
+            background: "rgba(6,10,5,0.92)",
+            border: "1px solid rgba(80,120,60,0.5)",
+            borderLeft: "3px solid #7aaa5a",
+            color: "#a0cc80",
+            fontSize: 15,
+            fontWeight: 700,
             textTransform: "uppercase",
-            letterSpacing: 2,
+            letterSpacing: 3,
             opacity: 0,
             transition: "opacity 0.3s",
-            textShadow: "0 0 10px #0f0",
-            boxShadow: "0 0 30px rgba(0,255,0,0.3)",
+            textShadow: "none",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
+            fontFamily: "'Rajdhani', sans-serif",
             whiteSpace: "nowrap",
           }}
           className="interaction-prompt"
@@ -1974,8 +2371,8 @@ export default function SabotageGame() {
                 position: "absolute",
                 width: 15,
                 height: 3,
-                background: "#f00",
-                boxShadow: "0 0 10px #f00",
+                background: "#fff",
+                boxShadow: "none",
                 ...style,
               }}
             />
@@ -1992,10 +2389,11 @@ export default function SabotageGame() {
             transform: "translate(-50%,-50%)",
             padding: "20px 40px",
             background: "rgba(0,0,0,0.9)",
-            border: "3px solid #0f0",
-            color: "#0f0",
-            fontSize: 24,
-            fontWeight: "bold",
+            border: "1px solid rgba(200,168,75,0.4)",
+            borderLeft: "4px solid #c8a84b",
+            color: "#e8d890",
+            fontSize: 20,
+            fontWeight: 700,
             textTransform: "uppercase",
             letterSpacing: 3,
             textAlign: "center",
@@ -2003,8 +2401,9 @@ export default function SabotageGame() {
             transition: "opacity 0.5s",
             pointerEvents: "none",
             zIndex: 100,
-            textShadow: "0 0 20px #0f0",
-            boxShadow: "0 0 40px rgba(0,255,0,0.3)",
+            textShadow: "none",
+            boxShadow: "0 4px 20px rgba(0,0,0,0.6)",
+            fontFamily: "'Oswald', sans-serif",
           }}
           className="notification"
         />
@@ -2406,7 +2805,7 @@ export default function SabotageGame() {
           width: "100%",
           height: "100%",
           background:
-            "linear-gradient(135deg, #000 0%, #0a1a0a 50%, #000 100%)",
+            "linear-gradient(160deg, #0a0b08 0%, #111410 40%, #0d0e0b 100%)",
           display: currentScreen === "start" ? "flex" : "none",
           flexDirection: "column",
           justifyContent: "center",
@@ -2418,21 +2817,23 @@ export default function SabotageGame() {
         <h1
           style={{
             fontSize: "clamp(48px, 10vw, 80px)",
-            color: "#0f0",
-            textShadow: "0 0 50px #0f0",
+            color: "#c8a84b",
+            textShadow: "0 2px 0 #6b5a1e, 0 0 40px rgba(200,168,75,0.4)",
             letterSpacing: 15,
             marginBottom: 10,
-            animation: "flicker 3s infinite",
+            fontFamily: "'Oswald', 'Arial Black', sans-serif",
+            fontWeight: 700,
           }}
         >
           SABOTAGE
         </h1>
         <div
           style={{
-            color: "#0a0",
-            fontSize: 20,
+            color: "#6b7c5a",
+            fontSize: 16,
             letterSpacing: 8,
             marginBottom: 50,
+            fontFamily: "'Rajdhani', sans-serif",
           }}
         >
           TACTICAL SOCIAL DEDUCTION
@@ -2442,11 +2843,12 @@ export default function SabotageGame() {
         <div style={{ marginBottom: 30, textAlign: "center" }}>
           <div
             style={{
-              color: "#0a0",
+              color: "#6b7c5a",
               fontSize: 13,
               letterSpacing: 3,
               marginBottom: 12,
               textTransform: "uppercase",
+              fontFamily: "'Rajdhani', sans-serif",
             }}
           >
             SELECT MAP
@@ -2462,12 +2864,16 @@ export default function SabotageGame() {
                   padding: "14px 22px",
                   minWidth: 160,
                   background:
-                    selectedMap === m.id ? "rgba(0,255,0,0.18)" : "transparent",
-                  color: selectedMap === m.id ? "#0f0" : "#0a0",
+                    selectedMap === m.id
+                      ? "rgba(200,168,75,0.12)"
+                      : "rgba(255,255,255,0.03)",
+                  color: selectedMap === m.id ? "#c8a84b" : "#7a8a68",
                   border:
-                    selectedMap === m.id ? "2px solid #0f0" : "2px solid #050",
+                    selectedMap === m.id
+                      ? "2px solid #c8a84b"
+                      : "2px solid #2a3020",
                   cursor: "pointer",
-                  fontFamily: "'Impact', 'Arial Black', sans-serif",
+                  fontFamily: "'Oswald', 'Arial Black', sans-serif",
                   fontSize: 15,
                   letterSpacing: 3,
                   textTransform: "uppercase",
@@ -2475,7 +2881,7 @@ export default function SabotageGame() {
                   transition: "all 0.2s",
                   boxShadow:
                     selectedMap === m.id
-                      ? "0 0 20px rgba(0,255,0,0.3)"
+                      ? "0 0 16px rgba(200,168,75,0.25), inset 0 0 20px rgba(200,168,75,0.05)"
                       : "none",
                 }}
               >
@@ -2485,7 +2891,7 @@ export default function SabotageGame() {
                 <div
                   style={{
                     fontSize: 10,
-                    color: selectedMap === m.id ? "#0c0" : "#040",
+                    color: selectedMap === m.id ? "#a8904a" : "#4a5538",
                     letterSpacing: 1,
                     fontFamily: "Arial, sans-serif",
                     whiteSpace: "normal",
@@ -2493,6 +2899,174 @@ export default function SabotageGame() {
                   }}
                 >
                   {m.description}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Character Selection */}
+        <div style={{ marginBottom: 24, width: "100%" }}>
+          <div
+            style={{
+              color: "#0f0",
+              fontSize: 13,
+              letterSpacing: 2,
+              textTransform: "uppercase",
+              marginBottom: 10,
+              textAlign: "center",
+            }}
+          >
+            SELECT CHARACTER
+          </div>
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              justifyContent: "center",
+              flexWrap: "wrap",
+            }}
+          >
+            {CHARACTERS.map((char) => (
+              <button
+                type="button"
+                key={char.id}
+                data-ocid={`char.item.${char.id}`}
+                onClick={() => setSelectedCharacter(char.id)}
+                style={{
+                  width: 80,
+                  height: 100,
+                  border:
+                    selectedCharacter === char.id
+                      ? `2px solid ${char.accent}`
+                      : "2px solid rgba(255,255,255,0.15)",
+                  borderRadius: 10,
+                  background:
+                    selectedCharacter === char.id
+                      ? `${char.color}33`
+                      : "rgba(0,0,0,0.4)",
+                  cursor: "pointer",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 4,
+                  boxShadow:
+                    selectedCharacter === char.id
+                      ? `0 0 12px ${char.accent}88`
+                      : "none",
+                  transition: "all 0.2s",
+                }}
+              >
+                <svg
+                  width="44"
+                  height="52"
+                  viewBox="0 0 44 52"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-label={char.name}
+                  role="img"
+                >
+                  <circle
+                    cx="22"
+                    cy="11"
+                    r="9"
+                    fill={char.color}
+                    stroke={char.accent}
+                    strokeWidth="1.5"
+                  />
+                  <ellipse
+                    cx="22"
+                    cy="11"
+                    rx="5"
+                    ry="3.5"
+                    fill="#001a00"
+                    opacity="0.85"
+                  />
+                  <circle
+                    cx="18"
+                    cy="15"
+                    r="2"
+                    fill="#222"
+                    stroke={char.accent}
+                    strokeWidth="0.8"
+                  />
+                  <circle
+                    cx="26"
+                    cy="15"
+                    r="2"
+                    fill="#222"
+                    stroke={char.accent}
+                    strokeWidth="0.8"
+                  />
+                  <rect
+                    x="12"
+                    y="20"
+                    width="20"
+                    height="20"
+                    rx="4"
+                    fill={char.color}
+                    stroke={char.accent}
+                    strokeWidth="1"
+                  />
+                  <circle
+                    cx="22"
+                    cy="29"
+                    r="4"
+                    fill={char.accent}
+                    opacity="0.5"
+                  />
+                  <rect
+                    x="4"
+                    y="20"
+                    width="8"
+                    height="14"
+                    rx="3"
+                    fill={char.color}
+                    stroke={char.accent}
+                    strokeWidth="0.8"
+                  />
+                  <rect
+                    x="32"
+                    y="20"
+                    width="8"
+                    height="14"
+                    rx="3"
+                    fill={char.color}
+                    stroke={char.accent}
+                    strokeWidth="0.8"
+                  />
+                  <rect
+                    x="13"
+                    y="40"
+                    width="7"
+                    height="11"
+                    rx="3"
+                    fill={char.color}
+                    stroke={char.accent}
+                    strokeWidth="0.8"
+                  />
+                  <rect
+                    x="24"
+                    y="40"
+                    width="7"
+                    height="11"
+                    rx="3"
+                    fill={char.color}
+                    stroke={char.accent}
+                    strokeWidth="0.8"
+                  />
+                </svg>
+                <div
+                  style={{
+                    color: char.accent,
+                    fontSize: 9,
+                    fontWeight: 700,
+                    letterSpacing: 1,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {char.name}
                 </div>
               </button>
             ))}
@@ -2539,26 +3113,26 @@ export default function SabotageGame() {
             data-ocid="game.settings_button"
             onClick={() => setCurrentScreen("settings")}
             style={{
-              padding: "25px 40px",
-              fontSize: 22,
-              background: "transparent",
-              color: "#0a0",
-              border: "2px solid #050",
+              padding: "18px 40px",
+              fontSize: 18,
+              background: "rgba(255,255,255,0.03)",
+              color: "#7a8a68",
+              border: "2px solid #2a3020",
               cursor: "pointer",
               textTransform: "uppercase",
               letterSpacing: 3,
-              fontWeight: "bold",
-              boxShadow: "0 0 15px rgba(0,100,0,0.2)",
+              fontWeight: 600,
+              boxShadow: "none",
               transition: "all 0.3s",
-              fontFamily: "'Impact', 'Arial Black', sans-serif",
+              fontFamily: "'Oswald', 'Impact', sans-serif",
             }}
             onMouseEnter={(e) => {
-              (e.target as HTMLButtonElement).style.borderColor = "#0f0";
-              (e.target as HTMLButtonElement).style.color = "#0f0";
+              (e.target as HTMLButtonElement).style.borderColor = "#c8a84b";
+              (e.target as HTMLButtonElement).style.color = "#c8a84b";
             }}
             onMouseLeave={(e) => {
-              (e.target as HTMLButtonElement).style.borderColor = "#050";
-              (e.target as HTMLButtonElement).style.color = "#0a0";
+              (e.target as HTMLButtonElement).style.borderColor = "#2a3020";
+              (e.target as HTMLButtonElement).style.color = "#7a8a68";
             }}
           >
             SETTINGS
@@ -2667,7 +3241,7 @@ export default function SabotageGame() {
           width: "100%",
           height: "100%",
           background:
-            "linear-gradient(135deg, #000 0%, #0a1a0a 50%, #000 100%)",
+            "linear-gradient(160deg, #0a0b08 0%, #111410 40%, #0d0e0b 100%)",
           display: currentScreen === "settings" ? "flex" : "none",
           flexDirection: "column",
           justifyContent: "center",
@@ -2679,20 +3253,23 @@ export default function SabotageGame() {
         <h2
           style={{
             fontSize: "clamp(28px, 6vw, 48px)",
-            color: "#fff",
+            color: "#c8a84b",
             letterSpacing: 8,
-            textShadow: "0 0 30px #8888cc",
+            textShadow: "0 2px 0 #6b5a1e",
             marginBottom: 8,
+            fontFamily: "'Oswald', sans-serif",
+            fontWeight: 700,
           }}
         >
           SETTINGS
         </h2>
         <div
           style={{
-            color: "#aab0d4",
-            fontSize: 14,
+            color: "#6b7c5a",
+            fontSize: 13,
             letterSpacing: 4,
             marginBottom: 40,
+            fontFamily: "'Rajdhani', sans-serif",
           }}
         >
           CONFIGURE MISSION PARAMETERS
@@ -2769,21 +3346,22 @@ export default function SabotageGame() {
           style={{
             width: "min(400px, 90vw)",
             marginBottom: 32,
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid #3a3a6e",
-            borderRadius: 10,
+            background: "rgba(255,255,255,0.03)",
+            border: "1px solid #2a3020",
+            borderRadius: 2,
             padding: "18px 20px",
           }}
         >
           <div
             style={{
-              color: "#aab0d4",
+              color: "#c8a84b",
               fontSize: 13,
               letterSpacing: 4,
               textTransform: "uppercase",
-              fontWeight: "bold",
+              fontWeight: 700,
               marginBottom: 16,
               textAlign: "center",
+              fontFamily: "'Rajdhani', sans-serif",
             }}
           >
             BUTTON COLOURS
@@ -2867,25 +3445,25 @@ export default function SabotageGame() {
           onClick={() => setCurrentScreen("start")}
           style={{
             padding: "15px 60px",
-            fontSize: 20,
-            background: "rgba(255,255,255,0.06)",
-            color: "#aab0d4",
-            border: "2px solid #3a3a6e",
+            fontSize: 18,
+            background: "rgba(200,168,75,0.08)",
+            color: "#c8a84b",
+            border: "2px solid #5a4a20",
             cursor: "pointer",
             textTransform: "uppercase",
             letterSpacing: 5,
-            fontWeight: "bold",
+            fontWeight: 600,
             transition: "all 0.3s",
-            fontFamily: "'Impact', 'Arial Black', sans-serif",
-            borderRadius: 8,
+            fontFamily: "'Oswald', sans-serif",
+            borderRadius: 2,
           }}
           onMouseEnter={(e) => {
-            (e.target as HTMLButtonElement).style.borderColor = "#8888cc";
-            (e.target as HTMLButtonElement).style.color = "#fff";
+            (e.target as HTMLButtonElement).style.borderColor = "#c8a84b";
+            (e.target as HTMLButtonElement).style.color = "#e8c870";
           }}
           onMouseLeave={(e) => {
-            (e.target as HTMLButtonElement).style.borderColor = "#3a3a6e";
-            (e.target as HTMLButtonElement).style.color = "#aab0d4";
+            (e.target as HTMLButtonElement).style.borderColor = "#5a4a20";
+            (e.target as HTMLButtonElement).style.color = "#c8a84b";
           }}
         >
           ← BACK
@@ -2894,6 +3472,7 @@ export default function SabotageGame() {
 
       {/* Global styles */}
       <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Oswald:wght@400;600;700&display=swap');
         #sabotage-game .role-banner.role-impostor {
           color: #f00 !important;
           border-color: #f00 !important;
@@ -2933,7 +3512,173 @@ export default function SabotageGame() {
           #sabotage-game .desktop-hint { display: none !important; }
           #sabotage-game .mobile-hint { display: inline !important; }
         }
-      `}</style>
+      #sabotage-game * { box-sizing: border-box; }
+      #sabotage-game .role-banner {
+        font-family: 'Oswald', 'Impact', sans-serif !important;
+        font-weight: 700 !important;
+      }
+      #sabotage-game .role-banner.role-impostor {
+        color: #ff4444 !important;
+        border-color: transparent !important;
+        border-bottom-color: #8a2020 !important;
+        text-shadow: 0 0 16px rgba(255,68,68,0.5) !important;
+        background: linear-gradient(90deg, transparent, rgba(30,5,5,0.9), transparent) !important;
+        animation: impostor-blink 1.5s ease-in-out infinite !important;
+      }
+      @keyframes impostor-blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.75; }
+      }
+      #sabotage-game .kill-button.ready {
+        background: rgba(20,5,5,0.95) !important;
+        border-color: #cc3030 !important;
+        color: #ff5050 !important;
+        animation: kill-pulse 0.6s ease-in-out infinite !important;
+        box-shadow: 0 0 20px rgba(200,50,50,0.4) !important;
+      }
+      #sabotage-game .kill-button.cooldown {
+        background: rgba(15,10,10,0.9) !important;
+        border-color: #3a2020 !important;
+        color: #5a3a3a !important;
+        animation: none !important;
+        box-shadow: none !important;
+      }
+      @keyframes kill-pulse {
+        0%, 100% { box-shadow: 0 0 12px rgba(200,50,50,0.3); }
+        50% { box-shadow: 0 0 24px rgba(200,50,50,0.6); }
+      }
+      #sabotage-game .interaction-prompt.visible { opacity: 1 !important; }
+      #sabotage-game .hit-marker.active { animation: hit-anim 0.25s forwards !important; }
+      #sabotage-game .notification.visible { opacity: 1 !important; }
+      #sabotage-game .notification.alert {
+        border-left-color: #cc3030 !important;
+        border-color: rgba(180,50,50,0.4) !important;
+        color: #ff8080 !important;
+        text-shadow: none !important;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.7) !important;
+      }
+      @keyframes flicker {
+        0%, 95%, 100% { opacity: 1; } 96% { opacity: 0.85; } 98% { opacity: 0.7; }
+      }
+      @keyframes hit-anim {
+        0% { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+        100% { opacity: 0; transform: translate(-50%,-50%) scale(1.6); }
+      }
+      /* Vignette overlay on game canvas */
+      #sabotage-game-vignette {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.65) 100%);
+        pointer-events: none; z-index: 5;
+      }
+      /* Scanline effect */
+      #sabotage-game-scanlines {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px);
+        pointer-events: none; z-index: 6;
+      }
+      /* Compass bar */
+      #sabotage-compass {
+        position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+        width: 280px; height: 28px;
+        background: rgba(6,10,5,0.85);
+        border: 1px solid rgba(80,100,60,0.4);
+        border-top: none;
+        border-radius: 0 0 4px 4px;
+        display: flex; align-items: center; justify-content: center;
+        font-family: 'Rajdhani', sans-serif;
+        font-size: 13px; font-weight: 700;
+        color: #90aa70; letter-spacing: 4px;
+        z-index: 15;
+      }
+      /* Kill feed */
+      #sabotage-killfeed {
+        position: absolute; top: 50px; right: 16px;
+        display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+        z-index: 15; pointer-events: none;
+        font-family: 'Rajdhani', sans-serif;
+      }
+      #sabotage-killfeed .kf-entry {
+        background: rgba(6,10,5,0.82);
+        border-right: 3px solid #8a2020;
+        padding: 4px 10px;
+        font-size: 13px; font-weight: 600;
+        color: #aaa; letter-spacing: 1px;
+        animation: kf-fade 4s forwards;
+      }
+      #sabotage-killfeed .kf-entry .kf-killer { color: #c8c8c8; }
+      #sabotage-killfeed .kf-entry .kf-victim { color: #cc5050; }
+      @keyframes kf-fade {
+        0%, 70% { opacity: 1; }
+        100% { opacity: 0; }
+      }
+      /* Health bar COD style */
+      #sabotage-health {
+        position: absolute; bottom: 30px; left: 20px;
+        display: flex; flex-direction: column; gap: 4px;
+        z-index: 15;
+      }
+      #sabotage-health-label {
+        font-family: 'Rajdhani', sans-serif;
+        font-size: 11px; font-weight: 700;
+        color: #7a9060; letter-spacing: 3px; text-transform: uppercase;
+      }
+      #sabotage-health-bar {
+        width: 180px; height: 10px;
+        background: rgba(20,30,15,0.8);
+        border: 1px solid rgba(80,100,60,0.3);
+        display: flex; gap: 2px; padding: 2px;
+      }
+      #sabotage-health-bar .seg {
+        flex: 1; height: 100%;
+        background: #4a9a4a;
+        transition: background 0.3s;
+      }
+      #sabotage-health-bar .seg.dead { background: rgba(80,80,80,0.3); }
+      /* Ammo counter */
+      #sabotage-ammo {
+        position: absolute; bottom: 30px; right: 20px;
+        font-family: 'Oswald', 'Rajdhani', monospace;
+        z-index: 15; text-align: right;
+        pointer-events: none;
+      }
+      #sabotage-ammo-main {
+        font-size: 42px; font-weight: 700;
+        color: #e8e8e8; line-height: 1;
+        text-shadow: 0 1px 0 rgba(0,0,0,0.8);
+        letter-spacing: -1px;
+      }
+      #sabotage-ammo-reserve {
+        font-size: 18px; color: #8a9880;
+        line-height: 1; letter-spacing: 1px;
+      }
+      /* Death/elimination overlay */
+      #sabotage-death-overlay {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: radial-gradient(ellipse at center, rgba(80,0,0,0.3) 0%, rgba(180,0,0,0.55) 100%);
+        display: none; align-items: center; justify-content: center;
+        z-index: 200; pointer-events: none;
+        flex-direction: column;
+      }
+      #sabotage-death-overlay.active { display: flex; }
+      #sabotage-death-overlay h2 {
+        font-family: 'Oswald', sans-serif;
+        font-size: clamp(32px, 8vw, 64px);
+        font-weight: 700;
+        color: #fff;
+        letter-spacing: 8px;
+        text-transform: uppercase;
+        text-shadow: 0 0 40px rgba(255,50,50,0.8);
+      }
+      #sabotage-death-overlay p {
+        font-family: 'Rajdhani', sans-serif;
+        font-size: 16px; color: rgba(255,180,180,0.8);
+        letter-spacing: 4px; margin-top: 8px;
+      }
+      @media (max-width: 768px) {
+        #sabotage-game .desktop-hint { display: none !important; }
+        #sabotage-game .mobile-hint { display: inline !important; }
+      }
+    `}</style>
     </div>
   );
 }
@@ -2964,8 +3709,9 @@ function VoteRow({
         alignItems: "center",
         gap: 14,
         padding: "14px 20px",
-        background: isVoted ? "rgba(0,80,0,0.6)" : "rgba(0,20,0,0.7)",
-        border: `2px solid ${isVoted ? "#0f0" : isSkip ? "#444" : color}`,
+        background: isVoted ? "rgba(15,30,10,0.85)" : "rgba(8,12,6,0.85)",
+        border: `1px solid ${isVoted ? "#5a8a4a" : isSkip ? "#3a3a3a" : "rgba(80,100,60,0.4)"}`,
+        borderLeft: `3px solid ${isVoted ? "#5a8a4a" : isSkip ? "#3a3a3a" : color}`,
         cursor: isVoted ? "default" : "pointer",
         transition: "all 0.2s",
         boxShadow: isVoted ? "0 0 20px rgba(0,255,0,0.4)" : "none",
@@ -2985,11 +3731,12 @@ function VoteRow({
       <div
         style={{
           flex: 1,
-          color: isVoted ? "#0f0" : "#ccc",
+          color: isVoted ? "#7acc7a" : "#b0b8a0",
           fontSize: "clamp(13px, 2.5vw, 17px)",
-          fontWeight: "bold",
+          fontWeight: 700,
           letterSpacing: 2,
           textTransform: "uppercase",
+          fontFamily: "'Rajdhani', sans-serif",
         }}
       >
         {label}
@@ -2997,13 +3744,14 @@ function VoteRow({
       {!isVoted && (
         <div
           style={{
-            padding: "6px 18px",
-            border: "1px solid #0a0",
-            color: "#0f0",
-            fontSize: 13,
+            padding: "5px 14px",
+            border: "1px solid #5a7a3a",
+            color: "#8aaa6a",
+            fontSize: 12,
             letterSpacing: 2,
-            fontWeight: "bold",
-            background: "rgba(0,40,0,0.5)",
+            fontWeight: 700,
+            background: "rgba(15,25,10,0.6)",
+            fontFamily: "'Rajdhani', sans-serif",
           }}
         >
           VOTE
@@ -3012,10 +3760,11 @@ function VoteRow({
       {isVoted && (
         <div
           style={{
-            color: "#0f0",
+            color: "#7acc7a",
             fontSize: 13,
             letterSpacing: 2,
-            fontWeight: "bold",
+            fontWeight: 700,
+            fontFamily: "'Rajdhani', sans-serif",
           }}
         >
           ✓ VOTED
@@ -3032,19 +3781,19 @@ function SettingRow({
   onInc,
 }: { label: string; value: string; onDec: () => void; onInc: () => void }) {
   const btnStyle: React.CSSProperties = {
-    width: 40,
-    height: 40,
-    background: "rgba(255,255,255,0.08)",
-    border: "2px solid #3a3a6e",
-    color: "#aab0d4",
-    fontSize: 22,
+    width: 36,
+    height: 36,
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid #3a4a2a",
+    color: "#8aaa6a",
+    fontSize: 20,
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    fontFamily: "'Impact', 'Arial Black', sans-serif",
+    fontFamily: "'Rajdhani', sans-serif",
     flexShrink: 0,
-    borderRadius: 6,
+    borderRadius: 2,
   };
   return (
     <div
