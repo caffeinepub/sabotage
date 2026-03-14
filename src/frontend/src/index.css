@@ -1,0 +1,132 @@
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/assets/fonts/JetBrainsMono.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0.08 0 0;
+    --foreground: 0.92 0.15 142;
+    --card: 0.1 0.02 142;
+    --card-foreground: 0.92 0.15 142;
+    --popover: 0.1 0.02 142;
+    --popover-foreground: 0.92 0.15 142;
+    --primary: 0.75 0.22 142;
+    --primary-foreground: 0.08 0 0;
+    --secondary: 0.15 0.04 142;
+    --secondary-foreground: 0.75 0.22 142;
+    --muted: 0.13 0.02 142;
+    --muted-foreground: 0.55 0.1 142;
+    --accent: 0.65 0.28 142;
+    --accent-foreground: 0.08 0 0;
+    --destructive: 0.65 0.28 29;
+    --destructive-foreground: 0.98 0 0;
+    --border: 0.22 0.05 142;
+    --input: 0.18 0.04 142;
+    --ring: 0.75 0.22 142;
+    --radius: 0px;
+    --chart-1: 0.75 0.22 142;
+    --chart-2: 0.65 0.28 29;
+    --chart-3: 0.7 0.2 200;
+    --chart-4: 0.8 0.18 80;
+    --chart-5: 0.6 0.22 320;
+    --sidebar: 0.1 0.02 142;
+    --sidebar-foreground: 0.92 0.15 142;
+    --sidebar-primary: 0.75 0.22 142;
+    --sidebar-primary-foreground: 0.08 0 0;
+    --sidebar-accent: 0.15 0.04 142;
+    --sidebar-accent-foreground: 0.75 0.22 142;
+    --sidebar-border: 0.22 0.05 142;
+    --sidebar-ring: 0.75 0.22 142;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    touch-action: none;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Impact", "Arial Black", sans-serif;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
+/* Game-specific global animations */
+@keyframes scanline {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+@keyframes flicker {
+  0%,
+  100% {
+    opacity: 1;
+    text-shadow: 0 0 50px #0f0;
+  }
+  50% {
+    opacity: 0.9;
+    text-shadow: 0 0 30px #0f0;
+  }
+  52% {
+    opacity: 0.3;
+    text-shadow: 0 0 10px #0f0;
+  }
+  54% {
+    opacity: 1;
+    text-shadow: 0 0 50px #0f0;
+  }
+}
+
+@keyframes pulse-red {
+  0%,
+  100% {
+    box-shadow: 0 0 30px rgba(255, 0, 0, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 50px rgba(255, 0, 0, 0.8);
+  }
+}
+
+@keyframes pulse-fast {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+@keyframes hit-anim {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
