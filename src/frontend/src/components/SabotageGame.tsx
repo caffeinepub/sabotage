@@ -719,17 +719,161 @@ export default function SabotageGame() {
     window.addEventListener("resize", resize);
 
     // ── Raycasting ───────────────────────────────────────────────────────────
-    function castRay(angle: number): number {
+
+    // Returns hit info: distance, fractional hit position along wall (0-1),
+    // whether the hit wall is a "door" (thin divider wall ≤2 units on one axis),
+    // and the world hit coords for floor/ceiling projection.
+    function castRayFull(angle: number): {
+      dist: number;
+      wallX: number;
+      isDoor: boolean;
+      hitWorldX: number;
+      hitWorldZ: number;
+    } {
       let dist = 0;
       const step = 0.05;
       const maxDist = 30;
+      const sinA = Math.sin(angle);
+      const cosA = Math.cos(angle);
+      const px = playerRef.current.x;
+      const pz = playerRef.current.z;
+
       while (dist < maxDist) {
-        const x = playerRef.current.x + Math.sin(angle) * dist;
-        const z = playerRef.current.z - Math.cos(angle) * dist;
-        if (checkCollision(x, z, ACTIVE_MAP.walls)) return dist;
+        const hx = px + sinA * dist;
+        const hz = pz - cosA * dist;
+
+        for (const wall of ACTIVE_MAP.walls) {
+          if (
+            hx + 0.3 > wall.x &&
+            hx - 0.3 < wall.x + wall.w &&
+            hz + 0.3 > wall.z &&
+            hz - 0.3 < wall.z + wall.d
+          ) {
+            // Determine hit side: project hit point onto wall edges
+            const wallCenterX = wall.x + wall.w / 2;
+            const wallCenterZ = wall.z + wall.d / 2;
+            const dx = hx - wallCenterX;
+            const dz = hz - wallCenterZ;
+            let wallX: number;
+            // Figure out which face was hit by comparing normalised offsets
+            if (Math.abs(dx / (wall.w / 2)) > Math.abs(dz / (wall.d / 2))) {
+              // Hit on X-facing face; texture coordinate is along Z
+              wallX = ((hz - wall.z) / wall.d) % 1;
+            } else {
+              // Hit on Z-facing face; texture coordinate is along X
+              wallX = ((hx - wall.x) / wall.w) % 1;
+            }
+            if (wallX < 0) wallX += 1;
+
+            // A "door" is a wall that is very thin on one dimension (≤ 2 units)
+            // These are the internal divider/corridor walls that act as doorways
+            const isDoor = wall.w <= 2 || wall.d <= 2;
+
+            return { dist, wallX, isDoor, hitWorldX: hx, hitWorldZ: hz };
+          }
+        }
         dist += step;
       }
-      return maxDist;
+      return {
+        dist: maxDist,
+        wallX: 0,
+        isDoor: false,
+        hitWorldX: px + sinA * maxDist,
+        hitWorldZ: pz - cosA * maxDist,
+      };
+    }
+
+    // ── Texture helpers ───────────────────────────────────────────────────────
+
+    // Simple deterministic noise: returns 0-1 for given integer grid coords
+    function cellNoise(cx: number, cz: number): number {
+      const n = Math.sin(cx * 127.1 + cz * 311.7) * 43758.5453;
+      return n - Math.floor(n);
+    }
+
+    // Concrete block wall color for a given texture column (wallX 0-1) and
+    // screen pixel Y within the wall strip (wallPY 0-wallHeight).
+    // Returns an rgb string with distance-based brightness applied.
+    function wallTexColor(
+      wallX: number,
+      wallPY: number,
+      wallHeight: number,
+      brightness: number,
+      isDoor: boolean,
+    ): string {
+      // Map wallPY to a repeating texture space (0-64 pixels = one block height)
+      const texH = 64; // texture height in px
+      const texW = 64; // texture width in px
+      // tex coords
+      const tx = Math.floor(wallX * texW) % texW;
+      const ty = Math.floor((wallPY / wallHeight) * texH * 3) % texH; // 3 = repeats per wall
+
+      if (isDoor) {
+        // ── Door: vertical iron bars ──────────────────────────────────────────
+        // Bar every 8 texture pixels; bar width = 4px
+        const barCycle = tx % 8;
+        if (barCycle < 4) {
+          // Metal bar — dark steel grey
+          const bv = Math.floor(55 * brightness);
+          return `rgb(${bv},${bv},${bv})`;
+        }
+        // Gap between bars — very dark, like open darkness behind bars
+        const gv = Math.floor(15 * brightness);
+        return `rgb(${gv},${gv},${gv + 5})`;
+      }
+
+      // ── Concrete block wall ───────────────────────────────────────────────
+      // Mortar lines: horizontal every 16px, vertical every 32px (staggered)
+      const blockRow = Math.floor(ty / 16);
+      const stagger = (blockRow % 2) * 16; // brick stagger
+      const blockCol = Math.floor((tx + stagger) / 32);
+
+      // Mortar gap detection
+      const rowMod = ty % 16;
+      const colMod = (tx + stagger) % 32;
+      const isMortar = rowMod <= 1 || colMod <= 1;
+
+      if (isMortar) {
+        // Mortar — slightly darker
+        const mv = Math.floor(60 * brightness);
+        return `rgb(${mv},${mv - 3},${mv - 5})`;
+      }
+
+      // Block face: vary colour by block position for realistic variation
+      const noise = cellNoise(blockCol + blockRow * 7, blockRow);
+      // Base palette: #585858(88) to #707070(112), with some blocks at #6b6b6b(107)
+      const base = 88 + Math.floor(noise * 24); // 88–112
+      const r = Math.floor(base * brightness);
+      const g = Math.floor((base - 3) * brightness);
+      const b = Math.floor((base - 6) * brightness);
+      return `rgb(${r},${g},${b})`;
+    }
+
+    // Floor tile color for world position (rx, rz)
+    function floorTexColor(rx: number, rz: number, brightness: number): string {
+      const cx = Math.floor(rx / 1.5);
+      const cz = Math.floor(rz / 1.5);
+      const n = cellNoise(cx, cz);
+
+      if (n < 0.45) {
+        // Mossy dark green patch
+        const v2 = cellNoise(cx * 3 + 1, cz * 3 + 1);
+        const r = Math.floor((55 + v2 * 12) * brightness);
+        const g = Math.floor((68 + v2 * 20) * brightness);
+        const b = Math.floor((40 + v2 * 8) * brightness);
+        return `rgb(${r},${g},${b})`;
+      }
+      if (n < 0.65) {
+        // Slightly lighter moss
+        const r = Math.floor(72 * brightness);
+        const g = Math.floor(88 * brightness);
+        const b = Math.floor(50 * brightness);
+        return `rgb(${r},${g},${b})`;
+      }
+      // Concrete patch
+      const v2 = cellNoise(cx + 100, cz + 100);
+      const base = Math.floor((125 + v2 * 25) * brightness);
+      return `rgb(${base},${base - 2},${base - 5})`;
     }
 
     function render() {
@@ -737,40 +881,92 @@ export default function SabotageGame() {
       const h = canvas!.height;
       const player = playerRef.current;
 
-      const grad = ctx.createLinearGradient(0, 0, 0, h);
-      grad.addColorStop(0, "#0a0a15");
-      grad.addColorStop(0.5, "#1a1a2e");
-      grad.addColorStop(1, "#0a0a15");
-      ctx.fillStyle = grad;
+      // ── Background (only visible if not playing) ──────────────────────────
+      ctx.fillStyle = "#1a1a1a";
       ctx.fillRect(0, 0, w, h);
 
       if (!gameRef.current.isPlaying) return;
 
       const numRays = Math.min(w / 2, 400);
       const fov = (60 * Math.PI) / 180;
+      const stripW = w / numRays + 1;
+
+      // ── Pre-draw solid ceiling and floor bands ────────────────────────────
+      // Ceiling: solid dark concrete #3a3a3a
+      ctx.fillStyle = "#3a3a3a";
+      ctx.fillRect(0, 0, w, h / 2);
+
+      // Floor: rendered per-strip below for perspective correction; pre-fill
+      // with a base dark tone first so gaps are covered
+      ctx.fillStyle = "#2a2e1e";
+      ctx.fillRect(0, h / 2, w, h / 2);
 
       for (let i = 0; i < numRays; i++) {
         const rayAngle = player.yaw - fov / 2 + (i / numRays) * fov;
-        const dist = castRay(rayAngle);
+        const hit = castRayFull(rayAngle);
+        const { dist, wallX, isDoor } = hit;
+
         const wallHeight = (h / dist) * 0.6;
-        const x = (i / numRays) * w;
-        const y = (h - wallHeight) / 2;
-        const brightness = Math.max(0.15, 1 - dist / 25);
-        const green = Math.floor(50 * brightness);
-        const stripW = w / numRays + 1;
+        const screenX = (i / numRays) * w;
+        const wallTop = (h - wallHeight) / 2;
+        const wallBottom = wallTop + wallHeight;
+        const brightness = Math.max(0.12, 1 - dist / 22);
 
-        const wallGrad = ctx.createLinearGradient(x, y, x, y + wallHeight);
-        wallGrad.addColorStop(0, `rgb(0,${green + 20},${green})`);
-        wallGrad.addColorStop(0.5, `rgb(0,${green + 40},${green + 20})`);
-        wallGrad.addColorStop(1, `rgb(0,${green + 20},${green})`);
-        ctx.fillStyle = wallGrad;
-        ctx.fillRect(x, y, stripW, wallHeight);
+        // ── Ceiling strip ────────────────────────────────────────────────────
+        // Already filled above; add subtle distance tint
+        const ceilV = Math.floor(58 * brightness);
+        ctx.fillStyle = `rgb(${ceilV},${ceilV},${ceilV})`;
+        ctx.fillRect(screenX, 0, stripW, wallTop);
 
-        ctx.fillStyle = `rgb(5,${Math.floor(10 * brightness)},5)`;
-        ctx.fillRect(x, y + wallHeight, stripW, h - y - wallHeight);
+        // ── Floor strip (perspective-correct sampled) ─────────────────────
+        // For each pixel row below wallBottom, project back to world coords
+        const floorStripStep = 4; // sample every N pixels for performance
+        for (let py = Math.ceil(wallBottom); py < h; py += floorStripStep) {
+          // How far below the horizon is this pixel? (0 = horizon, 1 = bottom)
+          const rowFrac = py / h - 0.5; // 0..0.5
+          if (rowFrac <= 0) continue;
+          const floorDist = (h * 0.3) / rowFrac / 2;
+          const floorBrightness = Math.max(0.08, 1 - floorDist / 18);
 
-        ctx.fillStyle = `rgb(5,5,${Math.floor(10 * brightness)})`;
-        ctx.fillRect(x, 0, stripW, y);
+          const fx = player.x + Math.sin(rayAngle) * floorDist;
+          const fz = player.z - Math.cos(rayAngle) * floorDist;
+
+          ctx.fillStyle = floorTexColor(fx, fz, floorBrightness);
+          ctx.fillRect(screenX, py, stripW, floorStripStep);
+        }
+
+        // ── Wall strip ───────────────────────────────────────────────────────
+        // Draw per-pixel vertically for texture detail
+        const wallPixStep = 2; // sample every 2px vertically
+        for (
+          let py = Math.max(0, Math.floor(wallTop));
+          py < Math.min(h, Math.ceil(wallBottom));
+          py += wallPixStep
+        ) {
+          const wallPY = py - wallTop; // pixel offset within wall strip
+          ctx.fillStyle = wallTexColor(
+            wallX,
+            wallPY,
+            wallHeight,
+            brightness,
+            isDoor,
+          );
+          ctx.fillRect(screenX, py, stripW, wallPixStep);
+        }
+
+        // ── Door bars: texture-space vertical bars over door wall strip ─────
+        // wallX is the fractional hit position along the wall (0-1).
+        // Map that to a repeating 8-unit bar cycle (bar=4, gap=4).
+        // The bars are already encoded in wallTexColor when isDoor=true,
+        // so this additional pass adds a stronger darkened gap effect.
+        if (isDoor) {
+          const barCycle = (wallX * 64) % 8; // 0-8 in texture space
+          if (barCycle >= 4) {
+            // Gap between bars — darken heavily (simulate open space behind)
+            ctx.fillStyle = "rgba(0,0,0,0.75)";
+            ctx.fillRect(screenX, wallTop, stripW, wallHeight);
+          }
+        }
       }
 
       drawObjects();
