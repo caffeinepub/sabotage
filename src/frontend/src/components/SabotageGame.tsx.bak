@@ -69,260 +69,89 @@ interface Settings {
   btnColors: BtnColors;
 }
 
-// ── Map Definitions ───────────────────────────────────────────────────────────
+// ── Map Data ─────────────────────────────────────────────────────────────────
+const WALLS: Wall[] = [
+  { x: -20, z: -20, w: 40, h: 2, d: 2 },
+  { x: -20, z: 18, w: 40, h: 2, d: 2 },
+  { x: -20, z: -20, w: 2, h: 2, d: 40 },
+  { x: 18, z: -20, w: 2, h: 2, d: 40 },
+  { x: -10, z: -10, w: 8, h: 2, d: 8 },
+  { x: 5, z: -10, w: 8, h: 2, d: 8 },
+  { x: -10, z: 5, w: 8, h: 2, d: 8 },
+  { x: 5, z: 5, w: 8, h: 2, d: 8 },
+  { x: -2, z: -20, w: 4, h: 2, d: 40 },
+  { x: -20, z: -2, w: 40, h: 2, d: 4 },
+];
 
-interface MapZone {
-  name: string;
-  x1: number;
-  x2: number;
-  z1: number;
-  z2: number;
-}
-interface MapRoomLabel {
-  name: string;
-  x: number;
-  z: number;
-}
-interface MapDefinition {
-  id: string;
-  label: string;
-  description: string;
-  walls: Wall[];
-  tasks: Omit<Task, "completed">[];
-  bots: Omit<Bot, "speed" | "targetTaskIndex" | "pauseFrames">[];
-  zones: MapZone[];
-  roomLabels: MapRoomLabel[];
-  playerSpawn: { x: number; z: number };
-}
+const ALL_TASKS: Omit<Task, "completed">[] = [
+  { x: -6, z: -6, name: "STABILIZE REACTOR" },
+  { x: 9, z: -6, name: "SCAN SAMPLE" },
+  { x: -6, z: 9, name: "DOWNLOAD DATA" },
+  { x: 9, z: 9, name: "CLEAN FILTER" },
+  { x: 0, z: 0, name: "FIX WIRING" },
+  { x: 15, z: 0, name: "ALIGN TELESCOPE" },
+  { x: -15, z: 0, name: "UPLOAD LOGS" },
+  { x: 0, z: 15, name: "PATCH HULL" },
+  { x: 0, z: -15, name: "REROUTE POWER" },
+  { x: 12, z: -12, name: "CALIBRATE ENGINES" },
+];
 
-const MAPS: Record<string, MapDefinition> = {
-  alcatraz: {
-    id: "alcatraz",
-    label: "ALCATRAZ",
-    description:
-      "Maximum security island prison. Multiple wings & role stations.",
-    playerSpawn: { x: 0, z: 0 },
-    // Outer perimeter + internal room dividers
-    walls: [
-      // Outer walls
-      { x: -28, z: -28, w: 56, h: 2, d: 2 }, // north
-      { x: -28, z: 26, w: 56, h: 2, d: 2 }, // south
-      { x: -28, z: -28, w: 2, h: 2, d: 56 }, // west
-      { x: 26, z: -28, w: 2, h: 2, d: 56 }, // east
-      // Cell block divider (N-S corridor wall)
-      { x: -2, z: -28, w: 4, h: 2, d: 22 },
-      { x: -2, z: 6, w: 4, h: 2, d: 20 },
-      // Engineer wing walls (SW)
-      { x: -28, z: 4, w: 18, h: 2, d: 2 },
-      { x: -12, z: 4, w: 2, h: 2, d: 12 },
-      // Doctor/Medbay wing walls (SE)
-      { x: 10, z: 4, w: 18, h: 2, d: 2 },
-      { x: 10, z: 4, w: 2, h: 2, d: 12 },
-      // Guard tower walls (NW)
-      { x: -28, z: -14, w: 12, h: 2, d: 2 },
-      { x: -18, z: -28, w: 2, h: 2, d: 14 },
-      // Armory walls (NE)
-      { x: 16, z: -28, w: 2, h: 2, d: 14 },
-      { x: 16, z: -14, w: 12, h: 2, d: 2 },
-      // Central courtyard pillars
-      { x: -4, z: -4, w: 2, h: 2, d: 2 },
-      { x: 2, z: -4, w: 2, h: 2, d: 2 },
-      { x: -4, z: 2, w: 2, h: 2, d: 2 },
-      { x: 2, z: 2, w: 2, h: 2, d: 2 },
-    ],
-    zones: [
-      { name: "ENGINEER BAY", x1: -28, x2: -12, z1: 4, z2: 26 },
-      { name: "MEDBAY", x1: 10, x2: 28, z1: 4, z2: 26 },
-      { name: "GUARD TOWER", x1: -28, x2: -18, z1: -28, z2: -14 },
-      { name: "ARMORY", x1: 16, x2: 28, z1: -28, z2: -14 },
-      { name: "CELL BLOCK A", x1: -28, x2: -2, z1: -14, z2: 4 },
-      { name: "CELL BLOCK B", x1: 2, x2: 28, z1: -14, z2: 4 },
-      { name: "MAIN COURTYARD", x1: -12, x2: 10, z1: -28, z2: 26 },
-    ],
-    roomLabels: [
-      { name: "ENGINEER BAY", x: -20, z: 16 },
-      { name: "MEDBAY", x: 18, z: 16 },
-      { name: "GUARD TOWER", x: -23, z: -22 },
-      { name: "ARMORY", x: 22, z: -22 },
-      { name: "CELL BLOCK A", x: -15, z: -5 },
-      { name: "CELL BLOCK B", x: 15, z: -5 },
-      { name: "COURTYARD", x: 0, z: -10 },
-    ],
-    tasks: [
-      { x: -20, z: 10, name: "FIX GENERATOR" }, // Engineer Bay
-      { x: -22, z: 18, name: "REPAIR PIPES" }, // Engineer Bay
-      { x: 18, z: 10, name: "SCAN PATIENT" }, // Medbay
-      { x: 14, z: 20, name: "MIX ANTIDOTE" }, // Medbay
-      { x: -23, z: -24, name: "GUARD PATROL LOG" }, // Guard Tower
-      { x: 20, z: -24, name: "RESTOCK AMMO" }, // Armory
-      { x: -15, z: -8, name: "UNLOCK CELL A4" }, // Cell Block A
-      { x: 15, z: -8, name: "UNLOCK CELL B7" }, // Cell Block B
-      { x: 0, z: -18, name: "CALIBRATE CAMERAS" }, // Courtyard
-      { x: 0, z: 14, name: "FIX COURTYARD LIGHT" }, // Courtyard
-    ],
-    bots: [
-      {
-        x: -20,
-        z: 12,
-        color: "#f472b6",
-        alive: true,
-        vx: 0,
-        vz: 0,
-        name: "BOT_PINK",
-      },
-      {
-        x: 18,
-        z: 12,
-        color: "#60a5fa",
-        alive: true,
-        vx: 0,
-        vz: 0,
-        name: "BOT_BLUE",
-      },
-      {
-        x: -23,
-        z: -22,
-        color: "#fbbf24",
-        alive: true,
-        vx: 0,
-        vz: 0,
-        name: "BOT_YELLOW",
-      },
-      {
-        x: 20,
-        z: -22,
-        color: "#a78bfa",
-        alive: true,
-        vx: 0,
-        vz: 0,
-        name: "BOT_PURPLE",
-      },
-      {
-        x: -15,
-        z: -6,
-        color: "#34d399",
-        alive: true,
-        vx: 0,
-        vz: 0,
-        name: "BOT_GREEN",
-      },
-      {
-        x: 15,
-        z: -6,
-        color: "#fb923c",
-        alive: true,
-        vx: 0,
-        vz: 0,
-        name: "BOT_ORANGE",
-      },
-    ],
+const ALL_BOTS: Omit<Bot, "speed" | "targetTaskIndex" | "pauseFrames">[] = [
+  {
+    x: -15,
+    z: -15,
+    color: "#f472b6",
+    alive: true,
+    vx: 0,
+    vz: 0,
+    name: "BOT_PINK",
   },
-
-  testing: {
-    id: "testing",
-    label: "TESTING GROUND",
-    description:
-      "Open flat arena. All rooms visible, ideal for testing mechanics.",
-    playerSpawn: { x: 0, z: 0 },
-    walls: [
-      // Outer boundary
-      { x: -24, z: -24, w: 48, h: 2, d: 2 },
-      { x: -24, z: 22, w: 48, h: 2, d: 2 },
-      { x: -24, z: -24, w: 2, h: 2, d: 48 },
-      { x: 22, z: -24, w: 2, h: 2, d: 48 },
-      // Small divider walls for rooms (no dead ends)
-      { x: -10, z: -10, w: 6, h: 2, d: 2 },
-      { x: 4, z: -10, w: 6, h: 2, d: 2 },
-      { x: -10, z: 8, w: 6, h: 2, d: 2 },
-      { x: 4, z: 8, w: 6, h: 2, d: 2 },
-    ],
-    zones: [
-      { name: "ENGINEER ROOM", x1: -24, x2: -4, z1: -24, z2: -2 },
-      { name: "DOCTOR ROOM", x1: 4, x2: 22, z1: -24, z2: -2 },
-      { name: "SPAWN ZONE", x1: -4, x2: 4, z1: -4, z2: 4 },
-      { name: "STORAGE", x1: -24, x2: -4, z1: 2, z2: 22 },
-      { name: "TEST RANGE", x1: 4, x2: 22, z1: 2, z2: 22 },
-    ],
-    roomLabels: [
-      { name: "ENGINEER ROOM", x: -14, z: -14 },
-      { name: "DOCTOR ROOM", x: 14, z: -14 },
-      { name: "SPAWN", x: 0, z: 0 },
-      { name: "STORAGE", x: -14, z: 12 },
-      { name: "TEST RANGE", x: 14, z: 12 },
-    ],
-    tasks: [
-      { x: -14, z: -16, name: "CALIBRATE TOOLS" }, // Engineer Room
-      { x: -8, z: -18, name: "CHARGE BATTERY" }, // Engineer Room
-      { x: 14, z: -16, name: "HEAL PATIENT" }, // Doctor Room
-      { x: 8, z: -18, name: "ADMINISTER DRUG" }, // Doctor Room
-      { x: 0, z: -2, name: "FIX TERMINAL" }, // Spawn
-      { x: -14, z: 14, name: "SORT SUPPLIES" }, // Storage
-      { x: 14, z: 14, name: "WEAPONS CHECK" }, // Test Range
-      { x: -18, z: 8, name: "UPLOAD DATA" }, // Storage
-      { x: 18, z: 8, name: "TARGET PRACTICE" }, // Test Range
-      { x: 0, z: 18, name: "RESET SYSTEMS" }, // Bottom area
-    ],
-    bots: [
-      {
-        x: -14,
-        z: -14,
-        color: "#f472b6",
-        alive: true,
-        vx: 0,
-        vz: 0,
-        name: "BOT_PINK",
-      },
-      {
-        x: 14,
-        z: -14,
-        color: "#60a5fa",
-        alive: true,
-        vx: 0,
-        vz: 0,
-        name: "BOT_BLUE",
-      },
-      {
-        x: -14,
-        z: 14,
-        color: "#fbbf24",
-        alive: true,
-        vx: 0,
-        vz: 0,
-        name: "BOT_YELLOW",
-      },
-      {
-        x: 14,
-        z: 14,
-        color: "#a78bfa",
-        alive: true,
-        vx: 0,
-        vz: 0,
-        name: "BOT_PURPLE",
-      },
-      {
-        x: 2,
-        z: -18,
-        color: "#34d399",
-        alive: true,
-        vx: 0,
-        vz: 0,
-        name: "BOT_GREEN",
-      },
-      {
-        x: -2,
-        z: 18,
-        color: "#fb923c",
-        alive: true,
-        vx: 0,
-        vz: 0,
-        name: "BOT_ORANGE",
-      },
-    ],
+  {
+    x: 15,
+    z: 15,
+    color: "#60a5fa",
+    alive: true,
+    vx: 0,
+    vz: 0,
+    name: "BOT_BLUE",
   },
-};
-
-// Legacy aliases (for backward compat inside useEffect)
-let ACTIVE_MAP: MapDefinition = MAPS.alcatraz;
+  {
+    x: -15,
+    z: 15,
+    color: "#fbbf24",
+    alive: true,
+    vx: 0,
+    vz: 0,
+    name: "BOT_YELLOW",
+  },
+  {
+    x: 12,
+    z: -5,
+    color: "#a78bfa",
+    alive: true,
+    vx: 0,
+    vz: 0,
+    name: "BOT_PURPLE",
+  },
+  {
+    x: -5,
+    z: 12,
+    color: "#34d399",
+    alive: true,
+    vx: 0,
+    vz: 0,
+    name: "BOT_GREEN",
+  },
+  {
+    x: 5,
+    z: -18,
+    color: "#fb923c",
+    alive: true,
+    vx: 0,
+    vz: 0,
+    name: "BOT_ORANGE",
+  },
+];
 
 const BOT_DISPLAY_NAMES: Record<string, string> = {
   BOT_PINK: "Bot Pink",
@@ -348,11 +177,14 @@ function checkCollision(x: number, z: number, walls: Wall[]): boolean {
 }
 
 function getLocation(x: number, z: number): string {
-  for (const zone of ACTIVE_MAP.zones) {
-    if (x > zone.x1 && x < zone.x2 && z > zone.z1 && z < zone.z2)
-      return zone.name;
-  }
-  return "OPEN AREA";
+  if (x > -10 && x < -2 && z > -10 && z < -2) return "REACTOR";
+  if (x > 5 && x < 13 && z > -10 && z < -2) return "MEDBAY";
+  if (x > -10 && x < -2 && z > 5 && z < 13) return "SECURITY";
+  if (x > 5 && x < 13 && z > 5 && z < 13) return "CAFETERIA";
+  if (x < -10 && z > -3 && z < 3) return "ENGINEERING";
+  if (x > 10 && z > -3 && z < 3) return "BRIDGE";
+  if (z > 10) return "STORAGE";
+  return "MAIN DECK";
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -436,7 +268,6 @@ export default function SabotageGame() {
   const [currentScreen, setCurrentScreen] = useState<
     "start" | "settings" | "game"
   >("start");
-  const [selectedMap, setSelectedMap] = useState<string>("alcatraz");
 
   // Sync meetingActiveRef with state
   const meetingTimerIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
@@ -726,7 +557,7 @@ export default function SabotageGame() {
       while (dist < maxDist) {
         const x = playerRef.current.x + Math.sin(angle) * dist;
         const z = playerRef.current.z - Math.cos(angle) * dist;
-        if (checkCollision(x, z, ACTIVE_MAP.walls)) return dist;
+        if (checkCollision(x, z, WALLS)) return dist;
         dist += step;
       }
       return maxDist;
@@ -852,7 +683,7 @@ export default function SabotageGame() {
       minimapCtx.fillRect(0, 0, mw, mh);
 
       minimapCtx.fillStyle = "rgba(0,255,0,0.3)";
-      for (const w of ACTIVE_MAP.walls) {
+      for (const w of WALLS) {
         minimapCtx.fillRect(
           cx + w.x * scale,
           cz + w.z * scale,
@@ -862,7 +693,12 @@ export default function SabotageGame() {
       }
 
       // Room labels
-      const roomLabels = ACTIVE_MAP.roomLabels;
+      const roomLabels = [
+        { name: "REACTOR", x: -7, z: -7 },
+        { name: "MEDBAY", x: 8, z: -7 },
+        { name: "SECURITY", x: -8, z: 8 },
+        { name: "CAFETERIA", x: 6, z: 8 },
+      ];
       minimapCtx.fillStyle = "rgba(0,200,0,0.7)";
       minimapCtx.font = `${isMobile ? 5 : 6}px Arial`;
       minimapCtx.textAlign = "center";
@@ -961,10 +797,8 @@ export default function SabotageGame() {
         dz += Math.sin(player.yaw) * speed;
       }
 
-      if (!checkCollision(player.x + dx, player.z, ACTIVE_MAP.walls))
-        player.x += dx;
-      if (!checkCollision(player.x, player.z + dz, ACTIVE_MAP.walls))
-        player.z += dz;
+      if (!checkCollision(player.x + dx, player.z, WALLS)) player.x += dx;
+      if (!checkCollision(player.x, player.z + dz, WALLS)) player.z += dz;
 
       // Bots — improved AI
       const tasks = tasksRef.current;
@@ -990,10 +824,8 @@ export default function SabotageGame() {
             const angle = Math.atan2(bot.x - player.x, bot.z - player.z);
             const fleeDx = Math.sin(angle) * bot.speed;
             const fleeDz = Math.cos(angle) * bot.speed;
-            if (!checkCollision(bot.x + fleeDx, bot.z, ACTIVE_MAP.walls))
-              bot.x += fleeDx;
-            if (!checkCollision(bot.x, bot.z + fleeDz, ACTIVE_MAP.walls))
-              bot.z += fleeDz;
+            if (!checkCollision(bot.x + fleeDx, bot.z, WALLS)) bot.x += fleeDx;
+            if (!checkCollision(bot.x, bot.z + fleeDz, WALLS)) bot.z += fleeDz;
             continue;
           }
         }
@@ -1014,20 +846,20 @@ export default function SabotageGame() {
             const moveDx = Math.sin(angle) * bot.speed;
             const moveDz = Math.cos(angle) * bot.speed;
 
-            if (!checkCollision(bot.x + moveDx, bot.z, ACTIVE_MAP.walls)) {
+            if (!checkCollision(bot.x + moveDx, bot.z, WALLS)) {
               bot.x += moveDx;
             } else {
               // Try perpendicular
               const perpDx = Math.sin(angle + Math.PI / 2) * bot.speed;
-              if (!checkCollision(bot.x + perpDx, bot.z, ACTIVE_MAP.walls))
+              if (!checkCollision(bot.x + perpDx, bot.z, WALLS))
                 bot.x += perpDx;
             }
 
-            if (!checkCollision(bot.x, bot.z + moveDz, ACTIVE_MAP.walls)) {
+            if (!checkCollision(bot.x, bot.z + moveDz, WALLS)) {
               bot.z += moveDz;
             } else {
               const perpDz = Math.cos(angle + Math.PI / 2) * bot.speed;
-              if (!checkCollision(bot.x, bot.z + perpDz, ACTIVE_MAP.walls))
+              if (!checkCollision(bot.x, bot.z + perpDz, WALLS))
                 bot.z += perpDz;
             }
           }
@@ -1037,10 +869,8 @@ export default function SabotageGame() {
             bot.vx = (Math.random() - 0.5) * bot.speed;
             bot.vz = (Math.random() - 0.5) * bot.speed;
           }
-          if (!checkCollision(bot.x + bot.vx, bot.z, ACTIVE_MAP.walls))
-            bot.x += bot.vx;
-          if (!checkCollision(bot.x, bot.z + bot.vz, ACTIVE_MAP.walls))
-            bot.z += bot.vz;
+          if (!checkCollision(bot.x + bot.vx, bot.z, WALLS)) bot.x += bot.vx;
+          if (!checkCollision(bot.x, bot.z + bot.vz, WALLS)) bot.z += bot.vz;
         }
       }
 
@@ -1121,12 +951,12 @@ export default function SabotageGame() {
     function startGame() {
       const s = settingsRef.current;
 
-      // Initialize tasks and bots based on selected map
-      tasksRef.current = ACTIVE_MAP.tasks.slice(0, s.numTasks).map((t) => ({
+      // Initialize tasks and bots based on settings
+      tasksRef.current = ALL_TASKS.slice(0, s.numTasks).map((t) => ({
         ...t,
         completed: false,
       }));
-      botsRef.current = ACTIVE_MAP.bots.slice(0, s.numBots).map((b) => ({
+      botsRef.current = ALL_BOTS.slice(0, s.numBots).map((b) => ({
         ...b,
         speed: 0.03 + Math.random() * 0.03,
         targetTaskIndex: Math.floor(Math.random() * s.numTasks),
@@ -1346,11 +1176,6 @@ export default function SabotageGame() {
 
   function handleStartGame() {
     applySettings(settingsState);
-    // Set the active map based on selection
-    ACTIVE_MAP = MAPS[selectedMap] || MAPS.alcatraz;
-    // Reset player to map spawn
-    playerRef.current.x = ACTIVE_MAP.playerSpawn.x;
-    playerRef.current.z = ACTIVE_MAP.playerSpawn.z;
     setCurrentScreen("game");
     if (startScreenRef.current) startScreenRef.current.style.display = "none";
     if (settingsScreenRef.current)
@@ -2240,67 +2065,6 @@ export default function SabotageGame() {
           }}
         >
           TACTICAL SOCIAL DEDUCTION
-        </div>
-
-        {/* Map Selector */}
-        <div style={{ marginBottom: 30, textAlign: "center" }}>
-          <div
-            style={{
-              color: "#0a0",
-              fontSize: 13,
-              letterSpacing: 3,
-              marginBottom: 12,
-              textTransform: "uppercase",
-            }}
-          >
-            SELECT MAP
-          </div>
-          <div style={{ display: "flex", gap: 16, justifyContent: "center" }}>
-            {Object.values(MAPS).map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                data-ocid={`map.${m.id}.button`}
-                onClick={() => setSelectedMap(m.id)}
-                style={{
-                  padding: "14px 22px",
-                  minWidth: 160,
-                  background:
-                    selectedMap === m.id ? "rgba(0,255,0,0.18)" : "transparent",
-                  color: selectedMap === m.id ? "#0f0" : "#0a0",
-                  border:
-                    selectedMap === m.id ? "2px solid #0f0" : "2px solid #050",
-                  cursor: "pointer",
-                  fontFamily: "'Impact', 'Arial Black', sans-serif",
-                  fontSize: 15,
-                  letterSpacing: 3,
-                  textTransform: "uppercase",
-                  textAlign: "left",
-                  transition: "all 0.2s",
-                  boxShadow:
-                    selectedMap === m.id
-                      ? "0 0 20px rgba(0,255,0,0.3)"
-                      : "none",
-                }}
-              >
-                <div style={{ fontWeight: "bold", marginBottom: 4 }}>
-                  {m.label}
-                </div>
-                <div
-                  style={{
-                    fontSize: 10,
-                    color: selectedMap === m.id ? "#0c0" : "#040",
-                    letterSpacing: 1,
-                    fontFamily: "Arial, sans-serif",
-                    whiteSpace: "normal",
-                    lineHeight: 1.3,
-                  }}
-                >
-                  {m.description}
-                </div>
-              </button>
-            ))}
-          </div>
         </div>
 
         <div style={{ display: "flex", gap: 20, marginBottom: 20 }}>
